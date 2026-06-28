@@ -335,3 +335,36 @@ Two artifacts:
 
 Install the self-host one for the daily driver; it connects to the local
 happy-server over Tailscale.
+
+### Onboarding bugs (2026-06-28 morning) — Carlos in, off Brave; 3 UX fixes
+Carlos installed and got in (via in-app custom-server override). The path
+exposed three bugs:
+
+**(a) baked URL silently didn't apply — ROOT CAUSE: Metro transform cache.**
+Once `serverConfig.ts` is cached from any non-env build, later builds reuse the
+stale module with `EXPO_PUBLIC_HAPPY_SERVER_URL` inlined as `undefined` →
+`getServerUrl` falls to the prod default → installer silently targets prod. (The
+shipped installer was built this way.) FIX (committed `5969830`):
+`scripts/build-selfhost.mjs` exports with `--clear` (forces re-transform) + a
+**guard** that fails the build if the URL isn't in dist + bundles the verified
+dist (`tauri.nobefore.conf.json` suppresses the re-export). The guard caught the
+bug on first run. Known-good self-host installer rebuilt (URL verified in dist
+**and** the binary).
+
+**(b) server screen = one-way restart trap** + **(c) no server indicator on the
+link screen.** FIX (committed `7bb5d60`): server.tsx shows an explicit
+restart-required prompt on save + a headerLeft back (back-or-root, never a dead
+end); restore/index.tsx shows the current server + a same-server note. New i18n
+keys across all 11 translation files. typecheck clean.
+
+**DURABLE fix for (a) — PROPOSED, converge before landing.** The build guard
+prevents shipping a mis-baked artifact, but the EXPO_PUBLIC bake is inherently
+build-env + cache fragile. Durable: have the **Tauri shell inject
+`globalThis.__HAPPY_CONFIG__ = { serverUrl }`** before the webview loads — the
+app already honors `__HAPPY_CONFIG__.serverUrl` ABOVE the prod default in the
+`getServerUrl` precedence, so this wins reliably and is immune to the Metro JS
+cache. Mechanism: Tauri `initializationScript` in `src-tauri/src/lib.rs`, URL
+from runtime env `HAPPY_SERVER_URL` with a compile-time `option_env!` fallback
+baked by the selfhost build. Two-layer (runtime override + baked default),
+reliable, no JS-bundler dependency. Awaiting overseer converge before
+implementing.
