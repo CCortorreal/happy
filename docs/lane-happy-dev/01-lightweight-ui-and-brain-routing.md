@@ -277,3 +277,21 @@ session — exactly the creep that OOMs. **Daily driver is shippable**: install
 `Happy_0.1.0_x64-setup.exe`, point at the server (in-app settings, or bake
 `EXPO_PUBLIC_HAPPY_SERVER_URL` once `.env.selfhost` exists), close Brave for
 normal work.
+
+### Self-host build (server URL baked) — both installers present
+`.env.selfhost` lives in the **server** package
+(`packages/happy-server/.env.selfhost` → `PUBLIC_URL=http://100.64.0.2:3005`,
+the desktop's Tailscale mesh IP). Only the non-secret URL is used — never the
+token/DB creds. Self-host build:
+`EXPO_PUBLIC_HAPPY_SERVER_URL=http://100.64.0.2:3005 pnpm tauri:build:production`
+(env set so the build's own export step bakes it). Rust cached → 43s. Verified:
+`100.64.0.2:3005` is present in the exported JS bundle.
+
+Two artifacts:
+- **Self-host daily driver:** `…/bundle/nsis/Happy_0.1.0_x64-setup.exe`
+  (targets `http://100.64.0.2:3005`).
+- **Default-proof (RAM witness):** `…/bundle/nsis/Happy_0.1.0_x64-setup_default-proof.exe`
+  (targets prod default).
+
+Install the self-host one for the daily driver; it connects to the local
+happy-server over Tailscale.
