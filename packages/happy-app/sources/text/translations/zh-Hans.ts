@@ -501,6 +501,15 @@ export const zhHans: TranslationStructure = {
         hearthside: '炉边',
     },
 
+    warden: {
+        sectionTitle: '需要您',
+        gate: '待决',
+        routine: '常规',
+        answered: '已回复',
+        reference: '参考',
+        from: ({ name }: { name: string }) => `来自 ${name}`,
+    },
+
     sidebar: {
         sessionsTitle: 'Happy',
         showArchived: '显示已归档',

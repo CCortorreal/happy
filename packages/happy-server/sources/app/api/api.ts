@@ -5,6 +5,7 @@ import { onShutdown } from "@/utils/shutdown";
 import { Fastify } from "./types";
 import { authRoutes } from "./routes/authRoutes";
 import { congressRoutes } from "./routes/congressRoutes";
+import { wardenRoutes } from "./routes/wardenRoutes";
 import { pushRoutes } from "./routes/pushRoutes";
 import { sessionRoutes } from "./routes/sessionRoutes";
 import { connectRoutes } from "./routes/connectRoutes";
@@ -114,6 +115,7 @@ export async function startApi(opts: StartApiOptions = {}) {
     v3SessionRoutes(typed);
     attachmentRoutes(typed);
     congressRoutes(typed);
+    wardenRoutes(typed);
 
     // Static webapp (self-host mode)
     if (opts.staticDir) {

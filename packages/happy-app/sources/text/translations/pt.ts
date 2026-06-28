@@ -499,6 +499,15 @@ export const pt: TranslationStructure = {
         hearthside: 'Junto à lareira',
     },
 
+    warden: {
+        sectionTitle: 'Precisam de você',
+        gate: 'Decisão',
+        routine: 'Rotina',
+        answered: 'Respondido',
+        reference: 'Referência',
+        from: ({ name }: { name: string }) => `de ${name}`,
+    },
+
     sidebar: {
         sessionsTitle: 'Happy',
         showArchived: 'Mostrar arquivadas',

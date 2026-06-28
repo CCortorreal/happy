@@ -500,6 +500,15 @@ export const es: TranslationStructure = {
         hearthside: 'Junto al hogar',
     },
 
+    warden: {
+        sectionTitle: 'Te necesitan',
+        gate: 'Decisión',
+        routine: 'Rutina',
+        answered: 'Respondido',
+        reference: 'Referencia',
+        from: ({ name }: { name: string }) => `de ${name}`,
+    },
+
     sidebar: {
         sessionsTitle: 'Happy',
         showArchived: 'Mostrar archivadas',

@@ -498,6 +498,15 @@ export const it: TranslationStructure = {
         hearthside: 'Accanto al focolare',
     },
 
+    warden: {
+        sectionTitle: 'Hanno bisogno di te',
+        gate: 'Decisione',
+        routine: 'Routine',
+        answered: 'Risposto',
+        reference: 'Riferimento',
+        from: ({ name }: { name: string }) => `da ${name}`,
+    },
+
     sidebar: {
         sessionsTitle: 'Happy',
         showArchived: 'Mostra archiviate',

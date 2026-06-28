@@ -501,6 +501,15 @@ export const ja: TranslationStructure = {
         hearthside: '炉端',
     },
 
+    warden: {
+        sectionTitle: '確認が必要です',
+        gate: '要対応',
+        routine: '任意',
+        answered: '回答済み',
+        reference: '参照',
+        from: ({ name }: { name: string }) => `${name} より`,
+    },
+
     sidebar: {
         sessionsTitle: 'Happy',
         showArchived: 'アーカイブを表示',

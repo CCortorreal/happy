@@ -500,6 +500,15 @@ export const ca: TranslationStructure = {
         hearthside: 'Vora la llar',
     },
 
+    warden: {
+        sectionTitle: 'Et necessiten',
+        gate: 'Decisió',
+        routine: 'Rutina',
+        answered: 'Respost',
+        reference: 'Referència',
+        from: ({ name }: { name: string }) => `de ${name}`,
+    },
+
     sidebar: {
         sessionsTitle: 'Happy',
         showArchived: 'Mostra arxivades',

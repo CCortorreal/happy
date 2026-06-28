@@ -516,6 +516,15 @@ export const ru: TranslationStructure = {
         hearthside: 'У очага',
     },
 
+    warden: {
+        sectionTitle: 'Нужно ваше внимание',
+        gate: 'Решение',
+        routine: 'Рутина',
+        answered: 'Отвечено',
+        reference: 'Ссылка',
+        from: ({ name }: { name: string }) => `от ${name}`,
+    },
+
     sidebar: {
         sessionsTitle: 'Happy',
         showArchived: 'Показать архив',

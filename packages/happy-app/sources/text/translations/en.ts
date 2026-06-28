@@ -516,6 +516,15 @@ export const en: TranslationStructure = {
         hearthside: 'Hearthside',
     },
 
+    warden: {
+        sectionTitle: 'Needs you',
+        gate: 'Gate',
+        routine: 'Routine',
+        answered: 'Answered',
+        reference: 'Reference',
+        from: ({ name }: { name: string }) => `from ${name}`,
+    },
+
     sidebar: {
         sessionsTitle: 'Happy',
         showArchived: 'Show archived',

@@ -22,6 +22,7 @@ import { useSessionActionAlert } from '@/hooks/useSessionQuickActions';
 import { useSettingMutable } from '@/sync/storage';
 import { useCongressRoster } from '@/hooks/useCongressRoster';
 import { CongressSeat } from '@/sync/congressTypes';
+import { WardenKnocks } from './WardenKnocks';
 import { t } from '@/text';
 
 const stylesheet = StyleSheet.create((theme) => ({
@@ -403,7 +404,11 @@ export function SessionsList({ previewData, previewRoster }: SessionsListProps =
 
     const HeaderComponent = React.useCallback(() => {
         return (
-            <UpdateBanner />
+            <>
+                {/* The Warden's notes on the mantel — renders nothing when empty. */}
+                <WardenKnocks />
+                <UpdateBanner />
+            </>
         );
     }, []);
 

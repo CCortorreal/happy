@@ -500,6 +500,15 @@ export const zhHant: TranslationStructure = {
         hearthside: '爐邊',
     },
 
+    warden: {
+        sectionTitle: '需要您',
+        gate: '待決',
+        routine: '常規',
+        answered: '已回覆',
+        reference: '參考',
+        from: ({ name }: { name: string }) => `來自 ${name}`,
+    },
+
     sidebar: {
         sessionsTitle: 'Happy',
         showArchived: '顯示已封存',

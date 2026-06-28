@@ -516,6 +516,16 @@ export const en = {
         hearthside: 'Hearthside',
     },
 
+    warden: {
+        // The Warden's knock-cards — asks left for Carlos, rendered as notes, not alerts.
+        sectionTitle: 'Needs you',
+        gate: 'Gate',                                          // blocks until answered
+        routine: 'Routine',                                    // optional, no rush
+        answered: 'Answered',
+        reference: 'Reference',
+        from: ({ name }: { name: string }) => `from ${name}`,  // sender line
+    },
+
     sidebar: {
         sessionsTitle: 'Happy',
         showArchived: 'Show archived',
