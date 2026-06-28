@@ -122,6 +122,26 @@ spawned Claude  --(Anthropic Messages)-->  ADAPTER SHIM  --(OpenAI /v1)-->  Olla
 flag immediately once the **adapter URL** is fixed by the overseer's shim scope.
 Until then, the seam is designed but the target URL is a TBD held by the adapter.
 
+### Bird-2 BUILT (2026-06-27 Nights Watch) — env-injection landed, adapter pending
+Infra (seat-595fbb) settled the adapter interface; wired against it (commit
+`932389e`, NO push):
+- `configuration.ts`: `brainMode` (`HAPPY_BRAIN=cloud|local|auto`, default
+  cloud) + `localBrainUrl/Model/ApiKey` (overridable; defaults
+  `http://localhost:8787` / `qwen3:30b-a3b` / dummy key).
+- `claude/brainRouting.ts`: `resolveBrain()` + `applyBrainEnv()` — single source
+  of brain-truth, pure env injection (`ANTHROPIC_BASE_URL/_API_KEY/_MODEL`), no
+  SDK fork, decided at spawn (never mid-turn). `auto` → cloud until the
+  reachability probe lands (follow-on).
+- Wired into **both** spawn paths: `sdk/query.ts` + `claudeLocal.ts`. No-op for
+  cloud. typecheck clean.
+
+**Adapter NOT YET LIVE** — infra is building the shim in parallel
+(`localhost:8787` → Ollama `100.64.0.2:11434/v1`). End-to-end verification
+(`HAPPY_BRAIN=local happy claude` → confirm it hits the local brain) is pending
+infra's curl-proof. Follow-on: a unit test for `applyBrainEnv` (awkward today —
+`configuration` is a process-start singleton; would need a testability refactor)
+and the `auto` reachability probe.
+
 ---
 
 ## Bird 3 — B1 cost badge
