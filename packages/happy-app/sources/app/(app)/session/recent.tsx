@@ -160,7 +160,7 @@ function groupSessionsByDate(sessions: Session[]): SessionHistoryItem[] {
     return items;
 }
 
-export default function SessionHistory() {
+export default React.memo(function SessionHistory() {
     const safeArea = useSafeAreaInsets();
     const allSessions = useAllSessions();
     const navigateToSession = useNavigateToSession();
@@ -267,4 +267,4 @@ export default function SessionHistory() {
             </View>
         </View>
     );
-}
+});
