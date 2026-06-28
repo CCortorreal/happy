@@ -43,6 +43,9 @@ if (!baked) {
 }
 console.log(`\n✓ GUARD: '${host}' is baked into dist.`);
 
-// 3. Bundle from the verified dist without re-exporting.
-run('pnpm exec tauri build --config src-tauri/tauri.nobefore.conf.json');
+// 3. Bundle from the verified dist without re-exporting. HAPPY_SELFHOST_URL is
+// read at COMPILE time by option_env! in lib.rs to bake the durable
+// __HAPPY_CONFIG__.serverUrl default (build.rs reruns on change). This is the
+// primary, Metro-cache-immune mechanism; the EXPO_PUBLIC bake above is a backup.
+run('pnpm exec tauri build --config src-tauri/tauri.nobefore.conf.json', { HAPPY_SELFHOST_URL: SERVER_URL });
 console.log('\n✓ Self-host installer built from verified dist.');
