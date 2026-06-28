@@ -21,12 +21,22 @@ import { join } from "node:path";
 // because the file is script-written and re-read on a timer.
 const CongressSeatSchema = z.object({
     seat: z.string(),
-    cuid: z.string(),       // JOIN key → session.id (load-bearing, locked)
+    // JOIN key → session.id for session rows; NULL for worker rows (a worker is
+    // watched, not a conversable session). Switch on `kind`, not on cuid===null.
+    cuid: z.string().nullable(),
     verdict: z.string(),    // oracle liveness verdict → status (locked over session.active)
+    kind: z.string().nullish(),     // 'session' (default) | 'worker'
     role: z.string().nullish(),
     pedal: z.string().nullish(),
     host: z.string().nullish(),
     pid: z.number().nullish(),
+    // Worker-row fields (kind === 'worker') — a pull-worker brain on the cheap tier.
+    model: z.string().nullish(),
+    warm: z.boolean().nullish(),
+    vramMB: z.number().nullish(),
+    currentWork: z.string().nullish(),
+    workStatus: z.string().nullish(),
+    startedAt: z.union([z.string(), z.number()]).nullish(),
 });
 
 // The oracle's native envelope key is `roster` (its name across the whole
@@ -89,12 +99,19 @@ export function congressRoutes(app: Fastify) {
                     stale: z.boolean(),
                     seats: z.array(z.object({
                         seat: z.string(),
-                        cuid: z.string(),
+                        cuid: z.string().nullable(),
                         verdict: z.string(),
+                        kind: z.string().nullable(),
                         role: z.string().nullable(),
                         pedal: z.string().nullable(),
                         host: z.string().nullable(),
                         pid: z.number().nullable(),
+                        model: z.string().nullable(),
+                        warm: z.boolean().nullable(),
+                        vramMB: z.number().nullable(),
+                        currentWork: z.string().nullable(),
+                        workStatus: z.string().nullable(),
+                        startedAt: z.string().nullable(),
                     })),
                 })
             }
@@ -109,10 +126,18 @@ export function congressRoutes(app: Fastify) {
                 seat: s.seat,
                 cuid: s.cuid,
                 verdict: s.verdict,
+                kind: s.kind ?? null,
                 role: s.role ?? null,
                 pedal: s.pedal ?? null,
                 host: s.host ?? null,
                 pid: s.pid ?? null,
+                model: s.model ?? null,
+                warm: s.warm ?? null,
+                vramMB: s.vramMB ?? null,
+                currentWork: s.currentWork ?? null,
+                workStatus: s.workStatus ?? null,
+                // Normalize startedAt (may be ISO string or epoch number) to a string.
+                startedAt: s.startedAt == null ? null : String(s.startedAt),
             })),
         });
     });

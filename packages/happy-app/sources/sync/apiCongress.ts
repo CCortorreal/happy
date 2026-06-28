@@ -66,7 +66,8 @@ export function joinRosterToSessions(
     const ids = sessionIds instanceof Set ? sessionIds : new Set(sessionIds);
     const bySession = new Map<string, CongressSeat>();
     for (const seat of seats) {
-        if (ids.has(seat.cuid)) {
+        // Worker rows have cuid:null — they never JOIN to a session.
+        if (seat.cuid != null && ids.has(seat.cuid)) {
             bySession.set(seat.cuid, seat);
         }
     }

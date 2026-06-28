@@ -526,6 +526,17 @@ export const en = {
         from: ({ name }: { name: string }) => `from ${name}`,  // sender line
     },
 
+    worker: {
+        // Pull-worker (brain) card copy — a worker is watched, not conversable.
+        drafting: 'drafting…',
+        idle: 'idle',
+        warm: 'warm',
+        stuck: ({ task, mins }: { task: string; mins: number }) => `stuck on ${task} (${mins}m)`,
+        vram: 'VRAM',
+        unloaded: 'unloaded',
+        lastTask: 'Last task',
+    },
+
     sidebar: {
         sessionsTitle: 'Happy',
         showArchived: 'Show archived',

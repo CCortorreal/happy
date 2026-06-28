@@ -510,6 +510,16 @@ export const zhHans: TranslationStructure = {
         from: ({ name }: { name: string }) => `来自 ${name}`,
     },
 
+    worker: {
+        drafting: '起草中…',
+        idle: '空闲',
+        warm: '已加载',
+        stuck: ({ task, mins }: { task: string; mins: number }) => `卡在 ${task} (${mins}分钟)`,
+        vram: '显存',
+        unloaded: '已卸载',
+        lastTask: '上一个任务',
+    },
+
     sidebar: {
         sessionsTitle: 'Happy',
         showArchived: '显示已归档',

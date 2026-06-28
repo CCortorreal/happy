@@ -10,6 +10,7 @@ function useDeepEqual<T>(selector: (state: StorageState) => T): (state: StorageS
     };
 }
 import { Session, Machine, GitStatus } from "./storageTypes";
+import type { CongressSeat } from "./congressTypes";
 import type { GitStatusFiles } from "./gitStatusFiles";
 import type { ProjectFilesList } from "./projectFiles";
 import { createReducer, reducer, ReducerState } from "./reducer/reducer";
@@ -135,7 +136,10 @@ export type SessionListViewItem =
     | { type: 'active-sessions'; sessions: SessionRowData[] }
     | { type: 'archive-toggle'; hidden: boolean }
     | { type: 'project-group'; displayPath: string; machine: Machine }
-    | { type: 'session'; session: SessionRowData };
+    | { type: 'session'; session: SessionRowData }
+    // Hearth: a worker (pull-worker brain) row in the Hearthside group. Carries
+    // the raw congress roster seat; rendered as a watched-not-conversable card.
+    | { type: 'congress-worker'; worker: CongressSeat };
 
 // Legacy type for backward compatibility - to be removed
 export type SessionListItem = string | Session;

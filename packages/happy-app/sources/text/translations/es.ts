@@ -509,6 +509,16 @@ export const es: TranslationStructure = {
         from: ({ name }: { name: string }) => `de ${name}`,
     },
 
+    worker: {
+        drafting: 'redactando…',
+        idle: 'inactivo',
+        warm: 'en memoria',
+        stuck: ({ task, mins }: { task: string; mins: number }) => `atascado en ${task} (${mins} min)`,
+        vram: 'VRAM',
+        unloaded: 'descargado',
+        lastTask: 'Última tarea',
+    },
+
     sidebar: {
         sessionsTitle: 'Happy',
         showArchived: 'Mostrar archivadas',

@@ -525,6 +525,16 @@ export const ru: TranslationStructure = {
         from: ({ name }: { name: string }) => `от ${name}`,
     },
 
+    worker: {
+        drafting: 'черновик…',
+        idle: 'простой',
+        warm: 'в памяти',
+        stuck: ({ task, mins }: { task: string; mins: number }) => `завис на ${task} (${mins} мин)`,
+        vram: 'VRAM',
+        unloaded: 'выгружен',
+        lastTask: 'Последняя задача',
+    },
+
     sidebar: {
         sessionsTitle: 'Happy',
         showArchived: 'Показать архив',

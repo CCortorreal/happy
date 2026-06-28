@@ -58,9 +58,23 @@ function makeSession(id: string, name: string, overrides: Partial<SessionRowData
 const previewRoster: Map<string, CongressSeat> = new Map(
     CONGRESS_LANES.map((l) => [
         l.cuid,
-        { seat: l.seat, cuid: l.cuid, verdict: l.verdict, role: l.role, pedal: l.pedal, host: 'CarlosPC', pid: l.pid } satisfies CongressSeat,
+        {
+            seat: l.seat, cuid: l.cuid, verdict: l.verdict, kind: 'session',
+            role: l.role, pedal: l.pedal, host: 'CarlosPC', pid: l.pid,
+            model: null, warm: null, vramMB: null, currentWork: null, workStatus: null, startedAt: null,
+        } satisfies CongressSeat,
     ])
 );
+
+// A worker lane (cuid:null) to showcase the watched-not-conversable WorkerCard.
+const previewWorkers: CongressSeat[] = [
+    {
+        seat: 'brain-3090', cuid: null, verdict: 'ALIVE', kind: 'worker',
+        role: 'pull-worker', pedal: null, host: 'CarlosPC', pid: 30352,
+        model: 'qwen3:30b', warm: true, vramMB: 19200,
+        currentWork: 'drafting i18n for the for-carlos cards', workStatus: 'working', startedAt: null,
+    },
+];
 
 // Raw list: the 8 congress lanes (which the transform lifts into Hearthside) plus
 // a couple of ordinary sessions under a date header, so the lift reads clearly.
@@ -80,7 +94,7 @@ export default function HearthPreviewScreen() {
             <View style={styles.banner}>
                 <Text style={styles.bannerText}>RENDERING PREVIEW · real roster data · on-device dogfood pending merge</Text>
             </View>
-            <SessionsList previewData={previewData} previewRoster={previewRoster} />
+            <SessionsList previewData={previewData} previewRoster={previewRoster} previewWorkers={previewWorkers} />
         </View>
     );
 }

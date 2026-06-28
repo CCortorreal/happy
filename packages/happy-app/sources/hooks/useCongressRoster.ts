@@ -18,14 +18,24 @@ import { CongressSeat } from '@/sync/congressTypes';
 // result is dropped (we keep the previous map so cards don't flicker away),
 // while a fresh empty result is adopted (a true "no congress seats" state).
 //
+// The roster carries two row kinds:
+//   - session rows (cuid set) → keyed by cuid for the JOIN onto session.id;
+//   - worker rows (kind==='worker', cuid null) → a separate list, NEVER joined
+//     (a worker is watched, not a conversable session).
 // When the roster is empty (infra hasn't published congress-roster.json yet),
-// the returned map is empty and the SessionsList enrichment renders nothing —
-// zero behavior change until the feed lands.
+// both are empty and the SessionsList enrichment renders nothing.
+
+export interface CongressRoster {
+    sessions: Map<string, CongressSeat>;
+    workers: CongressSeat[];
+}
+
+const EMPTY_ROSTER: CongressRoster = { sessions: new Map(), workers: [] };
 
 const POLL_INTERVAL_MS = 5000;
 
-export function useCongressRoster(): Map<string, CongressSeat> {
-    const [roster, setRoster] = React.useState<Map<string, CongressSeat>>(() => new Map());
+export function useCongressRoster(): CongressRoster {
+    const [roster, setRoster] = React.useState<CongressRoster>(EMPTY_ROSTER);
 
     React.useEffect(() => {
         let mounted = true;
@@ -39,14 +49,17 @@ export function useCongressRoster(): Map<string, CongressSeat> {
                     // Keep last-good on a stale/failed read; adopt fresh results
                     // (including a fresh empty roster — a true "nobody home").
                     if (mounted && !response.stale) {
-                        // The JOIN to live session rows happens in the consumer,
-                        // which knows the visible session ids. Here we key by cuid
-                        // so the consumer can do an O(1) lookup per row.
-                        const next = new Map<string, CongressSeat>();
+                        const sessions = new Map<string, CongressSeat>();
+                        const workers: CongressSeat[] = [];
                         for (const seat of response.seats) {
-                            next.set(seat.cuid, seat);
+                            if (seat.kind === 'worker' || seat.cuid == null) {
+                                workers.push(seat);
+                            } else {
+                                // cuid is non-null here → safe O(1) JOIN key.
+                                sessions.set(seat.cuid, seat);
+                            }
                         }
-                        setRoster(next);
+                        setRoster({ sessions, workers });
                     }
                 }
             } catch {

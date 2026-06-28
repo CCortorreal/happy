@@ -509,6 +509,16 @@ export const zhHant: TranslationStructure = {
         from: ({ name }: { name: string }) => `來自 ${name}`,
     },
 
+    worker: {
+        drafting: '起草中…',
+        idle: '閒置',
+        warm: '已載入',
+        stuck: ({ task, mins }: { task: string; mins: number }) => `卡在 ${task} (${mins}分鐘)`,
+        vram: '顯存',
+        unloaded: '已卸載',
+        lastTask: '上一個任務',
+    },
+
     sidebar: {
         sessionsTitle: 'Happy',
         showArchived: '顯示已封存',

@@ -11,12 +11,22 @@ import { z } from 'zod';
 
 export const CongressSeatSchema = z.object({
     seat: z.string(),
-    cuid: z.string(),
+    // cuid = session.id for session rows (the JOIN key); null for worker rows
+    // (a worker is watched, not conversable). Switch on `kind`, not cuid===null.
+    cuid: z.string().nullable(),
     verdict: z.string(),
+    kind: z.string().nullable(),    // 'session' (default) | 'worker'
     role: z.string().nullable(),
     pedal: z.string().nullable(),
     host: z.string().nullable(),
     pid: z.number().nullable(),
+    // Worker-row fields (kind === 'worker').
+    model: z.string().nullable(),
+    warm: z.boolean().nullable(),
+    vramMB: z.number().nullable(),
+    currentWork: z.string().nullable(),
+    workStatus: z.string().nullable(),
+    startedAt: z.string().nullable(),
 });
 
 export const CongressRosterResponseSchema = z.object({

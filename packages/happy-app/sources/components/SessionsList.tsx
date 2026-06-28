@@ -23,6 +23,7 @@ import { useSettingMutable } from '@/sync/storage';
 import { useCongressRoster } from '@/hooks/useCongressRoster';
 import { CongressSeat } from '@/sync/congressTypes';
 import { WardenKnocks } from './WardenKnocks';
+import { WorkerCard } from './WorkerCard';
 import { t } from '@/text';
 
 const stylesheet = StyleSheet.create((theme) => ({
@@ -210,8 +211,9 @@ const stylesheet = StyleSheet.create((theme) => ({
 function buildHearthsideViewData(
     data: SessionListViewItem[],
     congressIds: Set<string>,
+    workers: CongressSeat[],
 ): SessionListViewItem[] {
-    if (congressIds.size === 0) {
+    if (congressIds.size === 0 && workers.length === 0) {
         return data;
     }
 
@@ -244,7 +246,10 @@ function buildHearthsideViewData(
         rest.push(item);
     }
 
-    if (congressRows.length === 0) {
+    // Worker rows (cuid:null) don't JOIN — they render as their own cards.
+    const workerItems: SessionListViewItem[] = workers.map((w) => ({ type: 'congress-worker', worker: w }));
+
+    if (congressRows.length === 0 && workerItems.length === 0) {
         return data;
     }
 
@@ -265,6 +270,7 @@ function buildHearthsideViewData(
     return [
         { type: 'header', title: t('hearth.hearthside') },
         ...congressRows,
+        ...workerItems,
         ...cleanedRest,
     ];
 }
@@ -275,24 +281,26 @@ function buildHearthsideViewData(
 export interface SessionsListProps {
     previewData?: SessionListViewItem[];
     previewRoster?: Map<string, CongressSeat>;
+    previewWorkers?: CongressSeat[];
 }
 
-export function SessionsList({ previewData, previewRoster }: SessionsListProps = {}) {
+export function SessionsList({ previewData, previewRoster, previewWorkers }: SessionsListProps = {}) {
     const styles = stylesheet;
     const safeArea = useSafeAreaInsets();
     // Hooks always run (stable hook order); preview props only swap the data source.
     const liveData = useVisibleSessionListViewData();
     const liveRoster = useCongressRoster();
     const data = previewData ?? liveData;
-    const roster = previewRoster ?? liveRoster;
+    const roster = previewRoster ?? liveRoster.sessions;
+    const workers = previewWorkers ?? liveRoster.workers;
     // Project the congress roster onto the visible list: a Hearthside group at
-    // the top. Untouched when the roster is empty (feed not live / no seats).
+    // the top (session-JOIN cards + worker cards). Untouched when both are empty.
     const viewData = React.useMemo(() => {
         if (!data) {
             return data;
         }
-        return buildHearthsideViewData(data, new Set(roster.keys()));
-    }, [data, roster]);
+        return buildHearthsideViewData(data, new Set(roster.keys()), workers);
+    }, [data, roster, workers]);
     const pathname = usePathname();
     const isTablet = useIsTablet();
     const [hideInactiveSessions, setHideInactiveSessions] = useSettingMutable('hideInactiveSessions');
@@ -330,6 +338,7 @@ export function SessionsList({ previewData, previewRoster }: SessionsListProps =
             case 'archive-toggle': return 'archive-toggle';
             case 'project-group': return `project-group-${item.machine.id}-${item.displayPath}-${index}`;
             case 'session': return `session-${item.session.id}`;
+            case 'congress-worker': return `worker-${item.worker.seat}`;
         }
     }, []);
 
@@ -374,6 +383,10 @@ export function SessionsList({ previewData, previewRoster }: SessionsListProps =
                         </Text>
                     </View>
                 );
+
+            case 'congress-worker':
+                // A worker is watched, not conversable — a self-contained card.
+                return <WorkerCard worker={item.worker} />;
 
             case 'session':
                 // Determine card styling based on position within date group

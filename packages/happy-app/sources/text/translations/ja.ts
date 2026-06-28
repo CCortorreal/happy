@@ -510,6 +510,16 @@ export const ja: TranslationStructure = {
         from: ({ name }: { name: string }) => `${name} より`,
     },
 
+    worker: {
+        drafting: '下書き中…',
+        idle: 'アイドル',
+        warm: 'ロード済み',
+        stuck: ({ task, mins }: { task: string; mins: number }) => `${task} で停止 (${mins}分)`,
+        vram: 'VRAM',
+        unloaded: '未ロード',
+        lastTask: '前回のタスク',
+    },
+
     sidebar: {
         sessionsTitle: 'Happy',
         showArchived: 'アーカイブを表示',

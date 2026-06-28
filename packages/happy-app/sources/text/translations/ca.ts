@@ -509,6 +509,16 @@ export const ca: TranslationStructure = {
         from: ({ name }: { name: string }) => `de ${name}`,
     },
 
+    worker: {
+        drafting: 'redactant…',
+        idle: 'inactiu',
+        warm: 'en memòria',
+        stuck: ({ task, mins }: { task: string; mins: number }) => `encallat a ${task} (${mins} min)`,
+        vram: 'VRAM',
+        unloaded: 'descarregat',
+        lastTask: 'Última tasca',
+    },
+
     sidebar: {
         sessionsTitle: 'Happy',
         showArchived: 'Mostra arxivades',
