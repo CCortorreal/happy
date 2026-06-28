@@ -39,8 +39,8 @@
     "tauri:build:dev": "tauri build --config src-tauri/tauri.dev.conf.json",
     "tauri:build:preview": "tauri build --config src-tauri/tauri.preview.conf.json",
     "tauri:build:production": "tauri build",
-    "// tauri:build:selfhost bakes the self-host server URL (PUBLIC_URL from happy-server/.env.selfhost, non-secret) into the client at export time; one-command daily-driver rebuild. Override the URL via the env var if your mesh IP differs.": "echo comment",
-    "tauri:build:selfhost": "cross-env EXPO_PUBLIC_HAPPY_SERVER_URL=http://100.64.0.2:3005 tauri build"
+    "// tauri:build:selfhost bakes the self-host server URL (PUBLIC_URL from happy-server/.env.selfhost, non-secret) into the client and GUARDS that it actually inlined (fails the build otherwise) so a silently prod-default artifact can't ship. Override the URL via EXPO_PUBLIC_HAPPY_SERVER_URL if your mesh IP differs.": "echo comment",
+    "tauri:build:selfhost": "node scripts/build-selfhost.mjs"
   },
   "jest": {
     "preset": "jest-expo"
