@@ -13,6 +13,7 @@ import {
 } from '@/components/modelModeOptions';
 import { getSuggestions } from '@/components/autocomplete/suggestions';
 import { ChatHeaderView } from '@/components/ChatHeaderView';
+import { SessionCostBadge } from '@/components/SessionCostBadge';
 import { ChatList } from '@/components/ChatList';
 import { Deferred } from '@/components/Deferred';
 import { EmptyMessages } from '@/components/EmptyMessages';
@@ -213,6 +214,17 @@ export const SessionView = React.memo((props: { id: string }) => {
         )
         : null;
 
+    // Normal-state right slot: live cost badge + the existing right content (avatar on phone).
+    // Suppressed while a diff/file overlay owns the slot.
+    const normalRightSlot = session
+        ? (
+            <>
+                <SessionCostBadge sessionId={sessionId} />
+                {headerRight}
+            </>
+        )
+        : headerRight;
+
     const mainContent = (
         <>
             {/* Status bar shadow for landscape mode */}
@@ -250,7 +262,7 @@ export const SessionView = React.memo((props: { id: string }) => {
                         folderName={headerProps.folderName}
                         isConnected={headerProps.isConnected}
                         extraPathSegment={fileViewPath ?? undefined}
-                        rightSlot={(diffViewOpen || !!fileViewPath) ? headerRightSlot : headerRight}
+                        rightSlot={(diffViewOpen || !!fileViewPath) ? headerRightSlot : normalRightSlot}
                         onTitlePress={session ? () => router.push(`/session/${sessionId}/info`) : undefined}
                         onBackPress={() => router.back()}
                     />
