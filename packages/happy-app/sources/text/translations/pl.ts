@@ -512,6 +512,10 @@ export const pl: TranslationStructure = {
         offlineUnableToSpawn: 'Nie można utworzyć nowej sesji, offline',
     },
 
+    hearth: {
+        hearthside: 'Przy kominku',
+    },
+
     sidebar: {
         sessionsTitle: 'Happy',
         showArchived: 'Pokaż zarchiwizowane',

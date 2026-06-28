@@ -496,6 +496,10 @@ export const zhHant: TranslationStructure = {
         offlineUnableToSpawn: '無法生成新工作階段，已離線',
     },
 
+    hearth: {
+        hearthside: '爐邊',
+    },
+
     sidebar: {
         sessionsTitle: 'Happy',
         showArchived: '顯示已封存',

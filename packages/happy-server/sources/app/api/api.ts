@@ -4,6 +4,7 @@ import { serializerCompiler, validatorCompiler, ZodTypeProvider } from "fastify-
 import { onShutdown } from "@/utils/shutdown";
 import { Fastify } from "./types";
 import { authRoutes } from "./routes/authRoutes";
+import { congressRoutes } from "./routes/congressRoutes";
 import { pushRoutes } from "./routes/pushRoutes";
 import { sessionRoutes } from "./routes/sessionRoutes";
 import { connectRoutes } from "./routes/connectRoutes";
@@ -112,6 +113,7 @@ export async function startApi(opts: StartApiOptions = {}) {
     kvRoutes(typed);
     v3SessionRoutes(typed);
     attachmentRoutes(typed);
+    congressRoutes(typed);
 
     // Static webapp (self-host mode)
     if (opts.staticDir) {

@@ -497,6 +497,10 @@ export const zhHans: TranslationStructure = {
         offlineUnableToSpawn: '无法生成新会话，已离线',
     },
 
+    hearth: {
+        hearthside: '炉边',
+    },
+
     sidebar: {
         sessionsTitle: 'Happy',
         showArchived: '显示已归档',

@@ -512,6 +512,10 @@ export const ru: TranslationStructure = {
         offlineUnableToSpawn: 'Невозможно создать сессию, машина offline',
     },
 
+    hearth: {
+        hearthside: 'У очага',
+    },
+
     sidebar: {
         sessionsTitle: 'Happy',
         showArchived: 'Показать архив',

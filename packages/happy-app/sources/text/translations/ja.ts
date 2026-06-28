@@ -497,6 +497,10 @@ export const ja: TranslationStructure = {
         offlineUnableToSpawn: 'オフラインのため新しいセッションを生成できません',
     },
 
+    hearth: {
+        hearthside: '炉端',
+    },
+
     sidebar: {
         sessionsTitle: 'Happy',
         showArchived: 'アーカイブを表示',

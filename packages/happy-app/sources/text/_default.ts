@@ -510,6 +510,12 @@ export const en = {
         offlineUnableToSpawn: 'Unable to spawn new session, offline',
     },
 
+    hearth: {
+        // The "Hearthside" group lifts congress lanes (peers, workers, the Warden)
+        // to the top of the sessions list — the one room where the household gathers.
+        hearthside: 'Hearthside',
+    },
+
     sidebar: {
         sessionsTitle: 'Happy',
         showArchived: 'Show archived',

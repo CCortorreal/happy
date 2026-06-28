@@ -20,6 +20,8 @@ import { useNavigateToSession } from '@/hooks/useNavigateToSession';
 import { SessionActionsAnchor, SessionActionsPopover } from './SessionActionsPopover';
 import { useSessionActionAlert } from '@/hooks/useSessionQuickActions';
 import { useSettingMutable } from '@/sync/storage';
+import { useCongressRoster } from '@/hooks/useCongressRoster';
+import { CongressSeat } from '@/sync/congressTypes';
 import { t } from '@/text';
 
 const stylesheet = StyleSheet.create((theme) => ({
@@ -196,10 +198,100 @@ const stylesheet = StyleSheet.create((theme) => ({
     },
 }));
 
-export function SessionsList() {
+// Hearth Phase 0 — lift congress lanes into a "Hearthside" group at the top.
+//
+// Additive + non-destructive: when no session id matches the roster (the infra
+// feed isn't live yet, or there simply are no congress seats), this returns the
+// data untouched — zero behavior change. When matches exist, the matched session
+// rows are moved out of their date/active groups into a single "Hearthside"
+// section, and any section title left empty by the move is dropped. The JOIN is
+// the locked invariant cuid === session.id.
+function buildHearthsideViewData(
+    data: SessionListViewItem[],
+    congressIds: Set<string>,
+): SessionListViewItem[] {
+    if (congressIds.size === 0) {
+        return data;
+    }
+
+    const congressRows: SessionListViewItem[] = [];
+    const rest: SessionListViewItem[] = [];
+
+    for (const item of data) {
+        if (item.type === 'session') {
+            if (congressIds.has(item.session.id)) {
+                congressRows.push(item);
+            } else {
+                rest.push(item);
+            }
+            continue;
+        }
+        if (item.type === 'active-sessions') {
+            // Pull any congress seats out of the compact active group and render
+            // them as full Hearthside cards (so they get role/pedal + verdict).
+            for (const s of item.sessions) {
+                if (congressIds.has(s.id)) {
+                    congressRows.push({ type: 'session', session: s });
+                }
+            }
+            const remaining = item.sessions.filter((s) => !congressIds.has(s.id));
+            if (remaining.length > 0) {
+                rest.push({ type: 'active-sessions', sessions: remaining });
+            }
+            continue;
+        }
+        rest.push(item);
+    }
+
+    if (congressRows.length === 0) {
+        return data;
+    }
+
+    // Drop a section title (date header / project group) that the move left with
+    // nothing beneath it — i.e. immediately followed by another title or the end.
+    const cleanedRest: SessionListViewItem[] = [];
+    for (let i = 0; i < rest.length; i++) {
+        const item = rest[i];
+        if (item.type === 'header' || item.type === 'project-group') {
+            const next = rest[i + 1];
+            if (!next || next.type === 'header' || next.type === 'project-group' || next.type === 'archive-toggle') {
+                continue;
+            }
+        }
+        cleanedRest.push(item);
+    }
+
+    return [
+        { type: 'header', title: t('hearth.hearthside') },
+        ...congressRows,
+        ...cleanedRest,
+    ];
+}
+
+// Preview seam (dev only): inject the data + roster to exercise the REAL render
+// path with fixture identities, without touching production behavior. Both props
+// default to the live hooks, so an ordinary <SessionsList /> is unchanged.
+export interface SessionsListProps {
+    previewData?: SessionListViewItem[];
+    previewRoster?: Map<string, CongressSeat>;
+}
+
+export function SessionsList({ previewData, previewRoster }: SessionsListProps = {}) {
     const styles = stylesheet;
     const safeArea = useSafeAreaInsets();
-    const data = useVisibleSessionListViewData();
+    // Hooks always run (stable hook order); preview props only swap the data source.
+    const liveData = useVisibleSessionListViewData();
+    const liveRoster = useCongressRoster();
+    const data = previewData ?? liveData;
+    const roster = previewRoster ?? liveRoster;
+    // Project the congress roster onto the visible list: a Hearthside group at
+    // the top. Untouched when the roster is empty (feed not live / no seats).
+    const viewData = React.useMemo(() => {
+        if (!data) {
+            return data;
+        }
+        return buildHearthsideViewData(data, new Set(roster.keys()));
+    }, [data, roster]);
     const pathname = usePathname();
     const isTablet = useIsTablet();
     const [hideInactiveSessions, setHideInactiveSessions] = useSettingMutable('hideInactiveSessions');
@@ -284,8 +376,8 @@ export function SessionsList() {
 
             case 'session':
                 // Determine card styling based on position within date group
-                const prevItem = index > 0 ? data[index - 1] : null;
-                const nextItem = index < data.length - 1 ? data[index + 1] : null;
+                const prevItem = index > 0 ? viewData![index - 1] : null;
+                const nextItem = index < viewData!.length - 1 ? viewData![index + 1] : null;
 
                 const isFirst = prevItem?.type === 'header';
                 const isLast = nextItem?.type === 'header' || nextItem == null || nextItem?.type === 'active-sessions';
@@ -295,6 +387,7 @@ export function SessionsList() {
                 return (
                     <SessionItem
                         session={item.session}
+                        congressSeat={roster.get(item.session.id)}
                         selected={selected}
                         isFirst={isFirst}
                         isLast={isLast}
@@ -302,7 +395,7 @@ export function SessionsList() {
                     />
                 );
         }
-    }, [selectedSessionId, data, toggleArchived]);
+    }, [selectedSessionId, viewData, roster, toggleArchived]);
 
 
     // Remove this section as we'll use FlatList for all items now
@@ -320,7 +413,7 @@ export function SessionsList() {
         <View style={styles.container}>
             <View style={styles.contentContainer}>
                 <FlatList
-                    data={data}
+                    data={viewData}
                     renderItem={renderItem}
                     keyExtractor={keyExtractor}
                     extraData={selectedSessionId}
@@ -342,8 +435,29 @@ const STATUS_CONFIG: Record<SessionState, { color: string; dotColor: string; isP
     permission_required: { color: '#FF9500', dotColor: '#FF9500', isPulsing: true, isConnected: true },
 };
 
-const SessionItem = React.memo(({ session, selected, isFirst, isLast, isSingle }: {
+// Congress liveness from the oracle verdict — derived-fail-closed (#170): a lane
+// reads ALIVE only when the verdict says so explicitly; everything else (DAEMON-
+// LOST, PID-DEAD, stale, unknown vocab) FAILS CLOSED to a dead/grey window. This
+// replaces the Session model's lying 15-min `active` flag for congress rows.
+function congressVerdictStatus(verdict: string): { color: string; dotColor: string; isPulsing: boolean; isConnected: boolean } {
+    const alive = verdict.trim().toUpperCase() === 'ALIVE';
+    return alive
+        ? { color: '#34C759', dotColor: '#34C759', isPulsing: false, isConnected: true }
+        : { color: '#999', dotColor: '#999', isPulsing: false, isConnected: false };
+}
+
+// The Hearthside identity line: role, with the pedal (the lane's current thread)
+// appended when present — e.g. "BUILD lane · happy-dev".
+function congressIdentity(seat: CongressSeat): string {
+    const role = seat.role?.trim();
+    const pedal = seat.pedal?.trim();
+    if (role && pedal) return `${role} · ${pedal}`;
+    return role || pedal || seat.seat;
+}
+
+const SessionItem = React.memo(({ session, congressSeat, selected, isFirst, isLast, isSingle }: {
     session: SessionRowData;
+    congressSeat?: CongressSeat;
     selected?: boolean;
     isFirst?: boolean;
     isLast?: boolean;
@@ -354,15 +468,21 @@ const SessionItem = React.memo(({ session, selected, isFirst, isLast, isSingle }
     const [actionsAnchor, setActionsAnchor] = React.useState<SessionActionsAnchor | null>(null);
     const baseStatus = STATUS_CONFIG[session.state];
     // Override to solid blue when session has unread results
-    const status = session.hasUnread
-        ? { ...baseStatus, color: '#007AFF', dotColor: '#007AFF', isPulsing: false, isConnected: baseStatus.isConnected }
-        : baseStatus;
+    const status = congressSeat
+        // Congress lane: liveness is the oracle verdict, NOT session.state.
+        ? congressVerdictStatus(congressSeat.verdict)
+        : session.hasUnread
+            ? { ...baseStatus, color: '#007AFF', dotColor: '#007AFF', isPulsing: false, isConnected: baseStatus.isConnected }
+            : baseStatus;
 
     const vibingMessage = React.useMemo(() => {
         return vibingMessages[Math.floor(Math.random() * vibingMessages.length)].toLowerCase() + '…';
     }, [session.state]);
 
-    const statusText = session.hasUnread
+    const statusText = congressSeat
+        // The trustworthy verdict, shown as the status line (oracle data, warm-cased).
+        ? congressSeat.verdict.trim().toLowerCase()
+        : session.hasUnread
         ? t('status.unread')
         : session.state === 'thinking'
             ? vibingMessage
@@ -433,7 +553,13 @@ const SessionItem = React.memo(({ session, selected, isFirst, isLast, isSingle }
                     </Text>
                 </View>
 
-                {session.path ? (
+                {congressSeat ? (
+                    <View style={styles.sessionSubtitleRow}>
+                        <Text style={styles.sessionSubtitle} numberOfLines={1}>
+                            {congressIdentity(congressSeat)}
+                        </Text>
+                    </View>
+                ) : session.path ? (
                     <View style={styles.sessionSubtitleRow}>
                         <Text style={styles.sessionSubtitle} numberOfLines={1}>
                             {session.path.split(/[/\\]/).filter(Boolean).pop()}

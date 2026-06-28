@@ -496,6 +496,10 @@ export const ca: TranslationStructure = {
         offlineUnableToSpawn: 'No es pot crear una nova sessió, fora de línia',
     },
 
+    hearth: {
+        hearthside: 'Vora la llar',
+    },
+
     sidebar: {
         sessionsTitle: 'Happy',
         showArchived: 'Mostra arxivades',
