@@ -248,3 +248,32 @@ driver sidesteps that entire second-Chromium stack. **Bird-1 thesis proven.**
 
 Artifacts (`dist/`, `src-tauri/target/`) are gitignored — only the config +
 this doc are committed. No push (Carlos gates).
+
+---
+
+## Bird-1 PRODUCTION INSTALLER + Bird-3 (2026-06-27) — SHIPPABLE
+
+**Bird-3 wired first** (so one release build carries it): `SessionCostBadge` in
+the session header right-slot (empty on desktop/web), tier-tinted, overlay-
+suppressed, no loading-flicker; commits the witnessed-GREEN `useSessionCost`
+hook. `typecheck` clean. (commit `1e61512`)
+
+**Production installer built** (`pnpm tauri:build:production`, release+nsis,
+2m27s): `src-tauri/target/release/bundle/nsis/Happy_0.1.0_x64-setup.exe`
+(14.7 MB installer; release `app.exe` 25.8 MB optimized). Picks up
+`tauri.windows.conf.json` (nsis target, clean Windows window, WebView2
+downloadBootstrapper).
+
+**Final RAM (release build) — gate re-confirmed and widened:**
+
+| Surface | Processes | WorkingSet |
+|---|---|---|
+| Brave (live, climbing toward OOM) | 18 | **8,726 MB** |
+| Happy Tauri/WebView2 release | 7 | **419 MB** |
+
+→ **~20× / ~95% reduction** vs live Brave. The release tree is even leaner than
+debug (7 procs / 419 MB vs 8 / 445). Brave grew from 5.4 GB → 8.7 GB across the
+session — exactly the creep that OOMs. **Daily driver is shippable**: install
+`Happy_0.1.0_x64-setup.exe`, point at the server (in-app settings, or bake
+`EXPO_PUBLIC_HAPPY_SERVER_URL` once `.env.selfhost` exists), close Brave for
+normal work.
