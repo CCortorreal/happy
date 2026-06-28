@@ -28,6 +28,16 @@ class Configuration {
   public readonly isExperimentalEnabled: boolean
   public readonly disableCaffeinate: boolean
 
+  // Brain routing: which LLM endpoint a spawned Claude/Happy seat runs against.
+  // 'cloud' (default) = the Anthropic API; 'local' = the local fallback brain
+  // (Ollama on the 3090, fronted by an Anthropic-Messages->/v1 adapter);
+  // 'auto' = cloud-reachability probe then local fallback (follow-on; today
+  // resolves to cloud). Applied via applyBrainEnv() in the spawn paths.
+  public readonly brainMode: 'cloud' | 'local' | 'auto'
+  public readonly localBrainUrl: string
+  public readonly localBrainModel: string
+  public readonly localBrainApiKey: string
+
   constructor() {
     // Check if we're running as daemon based on process args
     const args = process.argv.slice(2)
@@ -64,6 +74,12 @@ class Configuration {
 
     this.isExperimentalEnabled = ['true', '1', 'yes'].includes(process.env.HAPPY_EXPERIMENTAL?.toLowerCase() || '');
     this.disableCaffeinate = ['true', '1', 'yes'].includes(process.env.HAPPY_DISABLE_CAFFEINATE?.toLowerCase() || '');
+
+    const brain = (process.env.HAPPY_BRAIN || 'cloud').toLowerCase();
+    this.brainMode = (brain === 'local' || brain === 'auto') ? brain : 'cloud';
+    this.localBrainUrl = process.env.HAPPY_LOCAL_BRAIN_URL || 'http://localhost:8787';
+    this.localBrainModel = process.env.HAPPY_LOCAL_BRAIN_MODEL || 'qwen3:30b-a3b';
+    this.localBrainApiKey = process.env.HAPPY_LOCAL_BRAIN_API_KEY || 'happy-local-brain';
 
     this.currentCliVersion = packageJson.version
 

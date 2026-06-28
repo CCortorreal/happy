@@ -8,6 +8,7 @@ import type { QueryOptions, QueryPrompt, SDKMessage } from './types'
 import type { SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import { ensureLocalProxyBypass } from '../utils/proxyBypass'
 import { resolveHappyEntrypoint } from './happyEntrypoint'
+import { applyBrainEnv } from '../brainRouting'
 
 /**
  * Wraps the official SDK query() with our QueryOptions adapter
@@ -67,6 +68,8 @@ export function query(params: { prompt: QueryPrompt; options?: QueryOptions }): 
     if (opts?.mcpServers && Object.keys(opts.mcpServers).length > 0) {
         ensureLocalProxyBypass(env)
     }
+    // Route this spawn to the local fallback brain when HAPPY_BRAIN=local (no-op for cloud).
+    applyBrainEnv(env)
     sdkOptions.env = env
 
     // Map canCallTool -> canUseTool

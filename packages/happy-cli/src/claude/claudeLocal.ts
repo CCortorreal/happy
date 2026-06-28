@@ -5,6 +5,7 @@ import { mkdirSync, existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { logger } from "@/ui/logger";
 import { ensureLocalProxyBypass } from "./utils/proxyBypass";
+import { applyBrainEnv } from "./brainRouting";
 import { claudeCheckSession } from "./utils/claudeCheckSession";
 import { claudeFindLastSession } from "./utils/claudeFindLastSession";
 import { getProjectPath } from "./utils/path";
@@ -265,6 +266,9 @@ export async function claudeLocal(opts: {
             if (opts.mcpServers && Object.keys(opts.mcpServers).length > 0) {
                 ensureLocalProxyBypass(env);
             }
+
+            // Route this spawn to the local fallback brain when HAPPY_BRAIN=local (no-op for cloud).
+            applyBrainEnv(env);
 
             logger.debug(`[ClaudeLocal] Spawning launcher: ${claudeCliPath}`);
             logger.debug(`[ClaudeLocal] Args: ${JSON.stringify(args)}`);
