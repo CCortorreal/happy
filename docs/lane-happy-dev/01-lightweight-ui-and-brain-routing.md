@@ -208,3 +208,43 @@ local binary; the SECRET in `.env.selfhost` (token) still never gets committed.
 
 Status: **plan complete, NOT building.** Awaiting Carlos greenlight (overseer
 surfacing the gate). Adapter URL for bird-2 still TBD from overseer's shim scope.
+
+---
+
+## Bird-1 BUILD RESULT (2026-06-27, overseer BUILD GO) — ACCEPTANCE GATE PASSED
+
+**Toolchain:** the only missing prerequisite was Rust — VS2019 Community MSVC
+C++ tools (cl/link 14.29) + WebView2 runtime (149.x) were already present.
+Installed `rustup` (minimal, stable-msvc, Rust 1.96.0) — reversible.
+
+**Built:** `pnpm exec expo export --platform web` → `dist/` (incl.
+`canvaskit.wasm`); then `tauri build --no-bundle --debug` → `app.exe` (37.5 MB
+debug) in **1m57s**. `--no-bundle` so the smoke + RAM measure happen BEFORE the
+installer/bundle config (per directive).
+
+**Skia-web-in-WebView2 smoke (highest risk): PASS.** App launched, stayed alive
+through load (a CanvasKit/WASM init failure crashes the WebView2 renderer — it
+did not), 6 WebView2 render processes spawned cleanly, `canvaskit.wasm` present.
+Caveat: pixel-level visual confirmation not asserted headlessly; process
+stability + renderer survival + wasm load is the smoke evidence.
+
+**ACCEPTANCE GATE — RAM delta (the OOM proof):**
+
+| Surface | Processes | WorkingSet | PrivateBytes |
+|---|---|---|---|
+| Brave (baseline, *before* MCP+tab OOM spike) | 18 | **5,408 MB** | — |
+| Happy Tauri/WebView2 (full process tree) | 8 | **445 MB** | 258 MB |
+
+→ **~12× / ~92% RAM reduction.** Brave's 5.4 GB was the *pre-spike* floor; the
+OOM happens when the Chrome-MCP + happy tab pile on top. The WebView2 daily
+driver sidesteps that entire second-Chromium stack. **Bird-1 thesis proven.**
+
+**Remaining to land the daily driver (next, post-witness):**
+1. Production bundle build (`tauri build`, picks up `tauri.windows.conf.json` →
+   nsis installer + clean Windows window). Smoke already de-risked.
+2. Self-host: bake `EXPO_PUBLIC_HAPPY_SERVER_URL` once `.env.selfhost` exists
+   (absent today — built against default prod server for the RAM/Skia proof).
+3. Bird-3: wire `useSessionCost` into the session chrome on this surface.
+
+Artifacts (`dist/`, `src-tauri/target/`) are gitignored — only the config +
+this doc are committed. No push (Carlos gates).
