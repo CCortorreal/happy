@@ -12,10 +12,12 @@
  * Adapter interface (infra seat-595fbb, 2026-06-27):
  *   ANTHROPIC_BASE_URL = http://localhost:8787   (CC appends /v1/messages)
  *   ANTHROPIC_API_KEY  = any-non-empty           (CC requires it; adapter ignores it)
- *   model              = qwen3:30b-a3b           (pass-through to Ollama)
+ *   model              = llama3.1:8b             (pass-through to Ollama; default)
  * The adapter runs on CarlosPC and proxies to the 3090 (upstream
- * http://100.64.0.2:11434/v1). All three values are overridable via
- * HAPPY_LOCAL_BRAIN_URL / _API_KEY / _MODEL (see configuration.ts).
+ * http://100.64.0.2:11434/v1). The 8B is the session default — the 30B
+ * (qwen3:30b-a3b) is verified-correct but ~1.9 tok/s, too slow for real use.
+ * All three values are overridable via HAPPY_LOCAL_BRAIN_URL / _API_KEY /
+ * _MODEL (see configuration.ts).
  */
 
 import { configuration } from '@/configuration'

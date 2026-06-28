@@ -155,6 +155,13 @@ Adapter caveat baked into wiring rationale: `qwen3` is a thinking model — keep
 any `max_tokens` ≥ ~1024 (CC defaults are large, so fine); v1 adapter is
 text+streaming, tool-use flattens to text (full agentic tool-loop = v2).
 
+**Default model → `llama3.1:8b`** (lead direction, same watch): the 30B is
+verified-correct but ~1.9 tok/s — unusable for real sessions. Default switched
+to the 8B and **verified** through the adapter (curl `/v1/messages` model
+`llama3.1:8b` → valid Anthropic "PONG", near-instant). So a morning
+`HAPPY_BRAIN=local` flip lands on the usable 8B, not the slow 30B. Overridable
+via `HAPPY_LOCAL_BRAIN_MODEL`.
+
 ---
 
 ## Bird 3 — B1 cost badge

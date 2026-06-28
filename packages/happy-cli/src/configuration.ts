@@ -78,7 +78,10 @@ class Configuration {
     const brain = (process.env.HAPPY_BRAIN || 'cloud').toLowerCase();
     this.brainMode = (brain === 'local' || brain === 'auto') ? brain : 'cloud';
     this.localBrainUrl = process.env.HAPPY_LOCAL_BRAIN_URL || 'http://localhost:8787';
-    this.localBrainModel = process.env.HAPPY_LOCAL_BRAIN_MODEL || 'qwen3:30b-a3b';
+    // Default to the 8B: the 30B (qwen3:30b-a3b) verified correct but runs ~1.9
+    // tok/s — too slow for real sessions. Must match a model tag pulled in the
+    // adapter's Ollama; override via HAPPY_LOCAL_BRAIN_MODEL.
+    this.localBrainModel = process.env.HAPPY_LOCAL_BRAIN_MODEL || 'llama3.1:8b';
     this.localBrainApiKey = process.env.HAPPY_LOCAL_BRAIN_API_KEY || 'happy-local-brain';
 
     this.currentCliVersion = packageJson.version
