@@ -1,5 +1,6 @@
 import * as React from 'react';
-import { View, Text } from 'react-native';
+import { Text, Pressable } from 'react-native';
+import { router } from 'expo-router';
 import { StyleSheet, useUnistyles } from 'react-native-unistyles';
 import { Typography } from '@/constants/Typography';
 import { useSessionCost } from '@/hooks/useSessionCost';
@@ -30,14 +31,19 @@ export const SessionCostBadge = React.memo(({ sessionId }: { sessionId: string }
             : theme.colors.textSecondary;
 
     return (
-        <View style={styles.container}>
+        <Pressable
+            style={styles.container}
+            hitSlop={8}
+            onPress={() => router.push('/settings/usage')}
+            accessibilityRole="button"
+        >
             <Text
                 style={[Typography.default('semiBold'), styles.text, { color }]}
                 numberOfLines={1}
             >
                 {`$${cost.toFixed(2)}`}
             </Text>
-        </View>
+        </Pressable>
     );
 });
 
