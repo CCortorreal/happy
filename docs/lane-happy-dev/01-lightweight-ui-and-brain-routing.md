@@ -135,12 +135,25 @@ Infra (seat-595fbb) settled the adapter interface; wired against it (commit
 - Wired into **both** spawn paths: `sdk/query.ts` + `claudeLocal.ts`. No-op for
   cloud. typecheck clean.
 
-**Adapter NOT YET LIVE** — infra is building the shim in parallel
-(`localhost:8787` → Ollama `100.64.0.2:11434/v1`). End-to-end verification
-(`HAPPY_BRAIN=local happy claude` → confirm it hits the local brain) is pending
-infra's curl-proof. Follow-on: a unit test for `applyBrainEnv` (awkward today —
-`configuration` is a process-start singleton; would need a testability refactor)
-and the `auto` reachability probe.
+**Adapter LIVE + bird-2 chain VERIFIED (2026-06-27 Nights Watch):** infra stood
+the adapter up detached on `localhost:8787` (`/health` ok, model
+`qwen3:30b-a3b`, upstream `100.64.0.2:11434/v1`). Two-level proof:
+1. **`applyBrainEnv` wiring** (tsx): `HAPPY_BRAIN=local` → sets exactly
+   `ANTHROPIC_BASE_URL=http://localhost:8787`, `ANTHROPIC_API_KEY=happy-local-brain`,
+   `ANTHROPIC_MODEL=qwen3:30b-a3b`; `HAPPY_BRAIN=cloud` → no-op (all undefined).
+2. **End-of-chain** (curl as CC would — POST `/v1/messages` with the injected
+   model + key): the 30B returned a valid Anthropic message,
+   `content:[{type:text,text:"PONG"}]`, `stop_reason:end_turn`, usage reported.
+
+So the chain my env enables — injected env → adapter → 30B → valid Anthropic
+response — is proven. **Not yet exercised:** the literal `happy claude` spawn,
+because the bundled `@anthropic-ai/claude-code` **native binary isn't installed**
+(postinstall skipped); that full smoke + the `auto` reachability probe + a
+testability refactor for an `applyBrainEnv` unit test are daytime follow-ons.
+
+Adapter caveat baked into wiring rationale: `qwen3` is a thinking model — keep
+any `max_tokens` ≥ ~1024 (CC defaults are large, so fine); v1 adapter is
+text+streaming, tool-use flattens to text (full agentic tool-loop = v2).
 
 ---
 
