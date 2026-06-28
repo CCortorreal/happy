@@ -179,12 +179,16 @@ local binary; the SECRET in `.env.selfhost` (token) still never gets committed.
 5. **Build the binary** — `pnpm tauri:build:dev` (uses `tauri.dev.conf.json`).
    Produces the standalone Happy (dev) .exe/installer.
 6. **WebView2 smoke checklist** (the risk surface):
+   - **FIRST — smoke Skia-web** (`setup-skia-web`, runs in `postinstall`):
+     charts/avatars draw, no WebGL/CanvasKit errors in WebView2 devtools.
+     This is the HIGHEST-uncertainty item — surface a render-fail BEFORE sinking
+     time in bundle config (overseer directive).
    - app boots, QR/auth screen renders;
-   - **Skia-web** (`setup-skia-web`, runs in `postinstall`) renders — charts/
-     avatars draw, no WebGL/CanvasKit errors in WebView2 devtools console;
    - sync connects to the self-host server (`getServerUrl()` resolves to it);
-   - **measure RAM** of the WebView2 process tree vs the Brave-tab baseline —
-     this is the bird-1 success metric to bring back as witness evidence;
+   - **ACCEPTANCE GATE — measure RAM** of the WebView2 process tree vs the
+     Brave-tab+MCP baseline. **The OOM fix is NOT proven until the RAM-delta
+     shows it** (overseer: this measurement is the acceptance gate, not just a
+     metric). Bring the delta back as witness evidence.
    - LiveKit/voice may be lazy/deferred — not a blocker for the daily driver.
 7. **Bird-3 hook** — once the surface is up, wire `useSessionCost` into the
    session chrome (header/status). Small follow-on commit.
