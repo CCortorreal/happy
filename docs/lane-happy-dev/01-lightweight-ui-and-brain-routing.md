@@ -75,7 +75,12 @@ troubleshooting/DOM-inspection surface only — complementary, not clobbered.
 
 ## Bird 2 — Local-brain routing seam (CONSUME brain-3090, don't build)
 
-### The seam (exact location)
+> **CORRECTION (overseer, this round):** brain-3090 = **Ollama**, which speaks the
+> **OpenAI** `/v1/chat/completions` API, NOT the Anthropic Messages `/v1/messages`
+> API that `ANTHROPIC_BASE_URL` expects. Pointing `ANTHROPIC_BASE_URL` straight
+> at Ollama **will not work** (API mismatch). An **adapter shim** is required.
+
+### The seam (exact location) — mechanism unchanged
 A turn's brain is selected by the **env handed to the spawned Claude**, in two
 places that must stay consistent:
 - **SDK/remote path:** `packages/happy-cli/src/claude/sdk/query.ts:62-70` builds
@@ -83,33 +88,39 @@ places that must stay consistent:
 - **Local PTY path:** `packages/happy-cli/src/claude/claudeLocal.ts:260-263`
   builds `env = { ...process.env, ...opts.claudeEnvVars }`.
 
-Claude Code already honors `ANTHROPIC_BASE_URL` / `ANTHROPIC_AUTH_TOKEN` /
-`ANTHROPIC_MODEL`. So routing to the local brain is **pure env injection — no SDK
-fork.** Point those at brain-3090's endpoint and the same code path talks to the
-GPU instead of the cloud.
+Claude Code honors `ANTHROPIC_BASE_URL` / `ANTHROPIC_AUTH_TOKEN` /
+`ANTHROPIC_MODEL`. Routing stays **pure env injection — no SDK fork** — but the
+base URL points at the **adapter**, not at Ollama directly:
 
-### Design shape
-- Add `resolveBrain()` in `configuration.ts` returning either
-  `{ mode: 'cloud' }` (no overrides) or
-  `{ mode: 'local', env: { ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN, ANTHROPIC_MODEL, … } }`.
-  Mirrors the existing `HAPPY_*_URL` env > settings > default precedence already
-  in `configuration.ts`.
-- Add one `applyBrainEnv(env)` helper called in **both** spawn paths → single
-  source of brain-truth (same discipline as the one-source cost-truth in
-  `useSessionCost`).
-- **Trigger:** start with an explicit `HAPPY_BRAIN=cloud|local|auto` flag;
-  add an auto health-probe (cloud reachable / shed signal) as a follow-on.
-  **Decide at session/turn start, never silently mid-turn** (avoids a half-cloud
-  half-local turn).
-- Secrets (local base URL + token) live in `.env.selfhost`-style config — never
-  committed.
+```
+spawned Claude  --(Anthropic Messages)-->  ADAPTER SHIM  --(OpenAI /v1)-->  Ollama @ brain-3090
+```
 
-### Open question for the overseer (blocks build of (b))
-Does **brain-3090 already speak the Anthropic Messages API** (so
-`ANTHROPIC_BASE_URL` "just works"), or is an adapter shim needed? This is the
-only fork between "(b) = env injection only" and "(b) = env injection + small
-proxy." The brain is built — I need its **base URL + auth + model id** to wire
-the consume side.
+### Two pieces
+1. **Env injection (my lane, ready to build):**
+   - `resolveBrain()` in `configuration.ts` → `{ mode: 'cloud' }` (no overrides)
+     or `{ mode: 'local', env: {...} }`. Mirrors the existing
+     `HAPPY_*_URL` env > settings > default precedence already in that file.
+   - one `applyBrainEnv(env)` helper called in **both** spawn paths → single
+     source of brain-truth (same discipline as one-source cost-truth in
+     `useSessionCost`).
+   - `local` env set:
+     - `ANTHROPIC_BASE_URL` → the **adapter** URL (not Ollama)
+     - `ANTHROPIC_AUTH_TOKEN` → dummy (adapter holds/ignores auth; local mesh)
+     - `ANTHROPIC_MODEL` → ladder-selected, default `qwen3:30b-a3b`
+   - Adapter's upstream config (set on the adapter, not in happy):
+     Ollama base `http://100.64.0.2:11434/v1` (OpenAI-compat), no auth.
+   - **Trigger:** `HAPPY_BRAIN=cloud|local|auto`; auto = cloud-reachable/shed
+     probe as a follow-on. **Decide at session/turn start, never mid-turn.**
+   - Secrets/local config live in `.env.selfhost`-style files — never committed.
+2. **Adapter shim (overseer is scoping):** an Anthropic-Messages → OpenAI/Ollama
+   translating proxy. **Adopt, don't build** — LiteLLM proxy, or
+   claude-code-router / anthropic-proxy (battle-tested). This is the load-bearing
+   piece for the local-model-replaces-workers arc.
+
+**Build order for bird 2:** my env-injection is small and can land behind the
+flag immediately once the **adapter URL** is fixed by the overseer's shim scope.
+Until then, the seam is designed but the target URL is a TBD held by the adapter.
 
 ---
 
@@ -130,3 +141,66 @@ until the surface is the daily driver.
 
 Discipline: commit on `lane/happy-dev`, **no push** (Carlos gates).
 `.env.selfhost` is a secret, never committed.
+
+---
+
+## Bird-1 Windows-Tauri build plan (sprint-ready — execute on Carlos's greenlight)
+
+APPROVED: built-binary daily driver, WebView2, self-host server. Below is the
+exact sequence so the build is a sprint, not a discovery exercise.
+
+### How the web build picks the server (traced, load-bearing)
+`getServerUrl()` (`sources/sync/serverConfig.ts:10`) precedence:
+1. MMKV `custom-server-url` — set at runtime via in-app server settings
+   (`setServerUrl`); persists across logouts.
+2. `globalThis.__HAPPY_CONFIG__?.serverUrl`
+3. **`process.env.EXPO_PUBLIC_HAPPY_SERVER_URL`** — baked in at `expo export`.
+4. default `https://api.cluster-fluster.com`.
+
+→ **Bake the self-host URL via `EXPO_PUBLIC_HAPPY_SERVER_URL` at export time**
+(read from `.env.selfhost`, never committed). The in-app server-settings override
+(MMKV) is the runtime fallback. The URL is inlined into `dist/` JS — fine for a
+local binary; the SECRET in `.env.selfhost` (token) still never gets committed.
+
+### Step sequence
+1. **Branch hygiene:** work on `lane/happy-dev`, commit-in-place, no push.
+2. **Windows window config** — `tauri.conf.json` `app.windows[0]` is macOS-only
+   today (`titleBarStyle: "Overlay"`, `trafficLightPosition`, `hiddenTitle`).
+   Add a Windows-valid window block (standard `decorations: true`, drop the
+   macOS traffic-light keys for win32). Likely a `tauri.windows.conf.json` or
+   conditional config so macOS config is untouched.
+3. **Windows bundle target** — add `"nsis"` (and/or `"msi"`) to `bundle.targets`
+   for win32; `icons/icon.ico` already present. WebView2: rely on the evergreen
+   runtime already on Win11 (no bundled Chromium — the RAM win); set
+   `bundle.windows.webviewInstallMode` to `skip`/`downloadBootstrapper`.
+4. **Export the web frontend** — `EXPO_PUBLIC_HAPPY_SERVER_URL=<selfhost> \
+   pnpm exec expo export --platform web --output-dir dist` (matches
+   `beforeBuildCommand`). Confirm `dist/` produced.
+5. **Build the binary** — `pnpm tauri:build:dev` (uses `tauri.dev.conf.json`).
+   Produces the standalone Happy (dev) .exe/installer.
+6. **WebView2 smoke checklist** (the risk surface):
+   - app boots, QR/auth screen renders;
+   - **Skia-web** (`setup-skia-web`, runs in `postinstall`) renders — charts/
+     avatars draw, no WebGL/CanvasKit errors in WebView2 devtools console;
+   - sync connects to the self-host server (`getServerUrl()` resolves to it);
+   - **measure RAM** of the WebView2 process tree vs the Brave-tab baseline —
+     this is the bird-1 success metric to bring back as witness evidence;
+   - LiveKit/voice may be lazy/deferred — not a blocker for the daily driver.
+7. **Bird-3 hook** — once the surface is up, wire `useSessionCost` into the
+   session chrome (header/status). Small follow-on commit.
+
+### Known risks / watch-items
+- macOS-ism keys in the window config will reject on win32 — must be split.
+- Skia-web in WebView2 is the highest-uncertainty item → smoke-test early.
+- `expo-http-server` / native-only modules: web export already excludes native;
+  verify no web-build break from RN-only deps.
+- If WebView2 evergreen runtime is somehow absent, `downloadBootstrapper` mode
+  covers it (still no bundled Chromium).
+
+### Witness evidence to bring back
+- The built binary runs as a standalone window on the self-host server.
+- **RAM delta**: WebView2 happy window vs Brave-tab+MCP baseline (the OOM proof).
+- Brave can be fully closed during normal work; Chrome-MCP only for DOM debug.
+
+Status: **plan complete, NOT building.** Awaiting Carlos greenlight (overseer
+surfacing the gate). Adapter URL for bird-2 still TBD from overseer's shim scope.
