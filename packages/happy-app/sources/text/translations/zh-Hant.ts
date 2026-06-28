@@ -331,7 +331,11 @@ export const zhHant: TranslationStructure = {
         failedToConnectToServer: '連線伺服器失敗',
         currentlyUsingCustomServer: '目前使用自訂伺服器',
         customServerUrlLabel: '自訂伺服器 URL',
-        advancedFeatureFooter: "這是一個進階功能。只有在您知道自己在做什麼時才更改伺服器。更改伺服器後您需要重新登入。"
+        advancedFeatureFooter: "這是一個進階功能。只有在您知道自己在做什麼時才更改伺服器。更改伺服器後您需要重新登入。",
+        restartRequiredTitle: '伺服器已更改',
+        restartRequiredMessage: '請重新啟動 Happy 以使新伺服器生效。',
+        linkFromSameServerNote: '用於連結的裝置也必須登入此伺服器。',
+        linkingOnServer: ({ host }: { host: string }) => `正在伺服器上連結：${host}`
     },
 
     sessionInfo: {

@@ -12,6 +12,7 @@ import { Modal } from '@/modal';
 import { t } from '@/text';
 import { StyleSheet, useUnistyles } from 'react-native-unistyles';
 import { QRCode } from '@/components/qr/QRCode';
+import { getServerInfo } from '@/sync/serverConfig';
 
 const stylesheet = StyleSheet.create((theme) => ({
     scrollView: {
@@ -75,6 +76,11 @@ export default function Restore() {
 
     // Memoize keypair generation to prevent re-creating on re-renders
     const keypair = React.useMemo(() => generateAuthKeyPair(), []);
+
+    // Surface which server this link is happening on — the approving device must
+    // be signed in to the SAME server, else the link silently fails (self-host footgun).
+    const serverInfo = getServerInfo();
+    const serverHost = serverInfo.port ? `${serverInfo.hostname}:${serverInfo.port}` : serverInfo.hostname;
 
     // Start QR authentication when component mounts
     useEffect(() => {
@@ -143,6 +149,11 @@ export default function Restore() {
                         4. Scan this QR code
                     </Text>
                 </View>
+                <Text style={styles.qrInstructions}>
+                    {t('server.linkingOnServer', { host: serverHost })}
+                    {'\n'}
+                    {t('server.linkFromSameServerNote')}
+                </Text>
                 {!authReady && (
                     <View style={{ width: 200, height: 200, backgroundColor: theme.colors.surface, alignItems: 'center', justifyContent: 'center' }}>
                         <ActivityIndicator size="small" color={theme.colors.text} />

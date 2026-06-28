@@ -348,7 +348,11 @@ export const pl: TranslationStructure = {
         failedToConnectToServer: 'Nie udało się połączyć z serwerem',
         currentlyUsingCustomServer: 'Aktualnie używany jest niestandardowy serwer',
         customServerUrlLabel: 'URL niestandardowego serwera',
-        advancedFeatureFooter: 'To jest zaawansowana funkcja. Zmieniaj serwer tylko jeśli wiesz, co robisz. Po zmianie serwera będziesz musiał się wylogować i zalogować ponownie.'
+        advancedFeatureFooter: 'To jest zaawansowana funkcja. Zmieniaj serwer tylko jeśli wiesz, co robisz. Po zmianie serwera będziesz musiał się wylogować i zalogować ponownie.',
+        restartRequiredTitle: 'Serwer został zmieniony',
+        restartRequiredMessage: 'Uruchom ponownie Happy, aby nowy serwer zaczął działać.',
+        linkFromSameServerNote: 'Urządzenie, z którego łączysz, również musi być zalogowane na tym serwerze.',
+        linkingOnServer: ({ host }: { host: string }) => `Łączenie na serwerze: ${host}`
     },
 
     sessionInfo: {

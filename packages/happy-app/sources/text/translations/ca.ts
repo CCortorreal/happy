@@ -331,7 +331,11 @@ export const ca: TranslationStructure = {
         failedToConnectToServer: 'Ha fallat la connexió amb el servidor',
         currentlyUsingCustomServer: 'Actualment utilitzant un servidor personalitzat',
         customServerUrlLabel: 'URL del servidor personalitzat',
-        advancedFeatureFooter: 'Aquesta és una funció avançada. Només canvia el servidor si saps el que fas. Hauràs de tancar la sessió i tornar-la a iniciar després de canviar els servidors.'
+        advancedFeatureFooter: 'Aquesta és una funció avançada. Només canvia el servidor si saps el que fas. Hauràs de tancar la sessió i tornar-la a iniciar després de canviar els servidors.',
+        restartRequiredTitle: 'Servidor canviat',
+        restartRequiredMessage: 'Reinicia Happy perquè el nou servidor tingui efecte.',
+        linkFromSameServerNote: 'El dispositiu des del qual vincules també ha d\'haver iniciat sessió en aquest servidor.',
+        linkingOnServer: ({ host }: { host: string }) => `Vinculant al servidor: ${host}`
     },
 
     sessionInfo: {

@@ -332,7 +332,11 @@ export const ja: TranslationStructure = {
         failedToConnectToServer: 'サーバーへの接続に失敗しました',
         currentlyUsingCustomServer: '現在カスタムサーバーを使用中',
         customServerUrlLabel: 'カスタムサーバーURL',
-        advancedFeatureFooter: "これは高度な機能です。何をしているか理解している場合のみサーバーを変更してください。サーバー変更後は再度ログインが必要です。"
+        advancedFeatureFooter: "これは高度な機能です。何をしているか理解している場合のみサーバーを変更してください。サーバー変更後は再度ログインが必要です。",
+        restartRequiredTitle: 'サーバーが変更されました',
+        restartRequiredMessage: '新しいサーバーを反映するにはHappyを再起動してください。',
+        linkFromSameServerNote: 'リンク元のデバイスもこのサーバーにサインインしている必要があります。',
+        linkingOnServer: ({ host }: { host: string }) => `サーバーでリンク中: ${host}`
     },
 
     sessionInfo: {

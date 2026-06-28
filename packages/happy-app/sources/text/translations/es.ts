@@ -331,7 +331,11 @@ export const es: TranslationStructure = {
         failedToConnectToServer: 'Falló al conectar con el servidor',
         currentlyUsingCustomServer: 'Actualmente usando servidor personalizado',
         customServerUrlLabel: 'URL del servidor personalizado',
-        advancedFeatureFooter: 'Esta es una característica avanzada. Solo cambia el servidor si sabes lo que haces. Necesitarás cerrar sesión e iniciarla nuevamente después de cambiar servidores.'
+        advancedFeatureFooter: 'Esta es una característica avanzada. Solo cambia el servidor si sabes lo que haces. Necesitarás cerrar sesión e iniciarla nuevamente después de cambiar servidores.',
+        restartRequiredTitle: 'Servidor cambiado',
+        restartRequiredMessage: 'Reinicia Happy para que el nuevo servidor surta efecto.',
+        linkFromSameServerNote: 'El dispositivo desde el que vinculas también debe haber iniciado sesión en este servidor.',
+        linkingOnServer: ({ host }: { host: string }) => `Vinculando en el servidor: ${host}`
     },
 
     sessionInfo: {

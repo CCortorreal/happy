@@ -289,7 +289,11 @@ export const ru: TranslationStructure = {
         failedToConnectToServer: 'Не удалось подключиться к серверу',
         currentlyUsingCustomServer: 'Сейчас используется пользовательский сервер',
         customServerUrlLabel: 'URL пользовательского сервера',
-        advancedFeatureFooter: 'Это расширенная функция. Изменяйте сервер только если знаете, что делаете. Вам нужно будет выйти и войти снова после изменения серверов.'
+        advancedFeatureFooter: 'Это расширенная функция. Изменяйте сервер только если знаете, что делаете. Вам нужно будет выйти и войти снова после изменения серверов.',
+        restartRequiredTitle: 'Сервер изменён',
+        restartRequiredMessage: 'Перезапустите Happy, чтобы новый сервер вступил в силу.',
+        linkFromSameServerNote: 'Устройство, с которого вы выполняете привязку, также должно быть авторизовано на этом сервере.',
+        linkingOnServer: ({ host }: { host: string }) => `Привязка на сервере: ${host}`
     },
 
     sessionInfo: {

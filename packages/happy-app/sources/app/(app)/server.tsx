@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { View, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, TextInput, KeyboardAvoidingView, Platform, Pressable } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Stack, useRouter } from 'expo-router';
 import { Text } from '@/components/StyledText';
 import { Typography } from '@/constants/Typography';
@@ -142,6 +143,22 @@ export default function ServerConfigScreen() {
 
         if (confirmed) {
             setServerUrl(inputUrl);
+            // The sync socket already connected with the previous URL; a restart
+            // is required for the new server to take effect. Say so explicitly
+            // instead of leaving the user on a dead-end screen.
+            Modal.alert(t('server.restartRequiredTitle'), t('server.restartRequiredMessage'), [
+                { text: t('common.ok'), onPress: () => { if (router.canGoBack()) router.back(); } },
+            ]);
+        }
+    };
+
+    // Robust exit: go back when there's a stack (the Settings path), else fall
+    // back to the app root so the screen is never a one-way trap (first launch).
+    const handleClose = () => {
+        if (router.canGoBack()) {
+            router.back();
+        } else {
+            router.replace('/');
         }
     };
 
@@ -165,6 +182,11 @@ export default function ServerConfigScreen() {
                     headerShown: true,
                     headerTitle: t('server.serverConfiguration'),
                     headerBackTitle: t('common.back'),
+                    headerLeft: () => (
+                        <Pressable onPress={handleClose} hitSlop={12} style={{ paddingHorizontal: 8 }}>
+                            <Ionicons name="chevron-back" size={28} color={theme.colors.header.tint} />
+                        </Pressable>
+                    ),
                 }}
             />
 

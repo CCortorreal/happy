@@ -332,7 +332,11 @@ export const zhHans: TranslationStructure = {
         failedToConnectToServer: '连接服务器失败',
         currentlyUsingCustomServer: '当前使用自定义服务器',
         customServerUrlLabel: '自定义服务器 URL',
-        advancedFeatureFooter: "这是一个高级功能。只有在您知道自己在做什么时才更改服务器。更改服务器后您需要重新登录。"
+        advancedFeatureFooter: "这是一个高级功能。只有在您知道自己在做什么时才更改服务器。更改服务器后您需要重新登录。",
+        restartRequiredTitle: '服务器已更改',
+        restartRequiredMessage: '请重启 Happy 以使新服务器生效。',
+        linkFromSameServerNote: '用于关联的设备也必须登录到此服务器。',
+        linkingOnServer: ({ host }: { host: string }) => `正在服务器上关联：${host}`
     },
 
     sessionInfo: {
