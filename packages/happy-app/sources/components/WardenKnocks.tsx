@@ -44,15 +44,24 @@ import { t } from '@/text';
 const ACCENT_GATE = '#E5484D';
 const ACCENT_ROUTINE = '#9B7EDE';
 
-// A card is "dense" when the ask carries an operational wall (long prose or
-// embedded multi-line commands). We fold the tail behind a chevron rather than
-// parse it — robust regardless of how the lane wrote the ask.
-const DENSE_CHARS = 200;
-const REST_LINES = 3;
+// Progressive disclosure (Carlos's "the mantel must scan in ~2s, not be a wall"): a
+// knock rests as a tight HEADLINE + one-line summary; the full accreted body (the
+// SAFE-ITEM / lockout-class / CHANGE / ROLLBACK / APPLIES walls a lane writes) folds
+// behind expand-on-tap. Derived from `q` client-side — the lane doesn't author a title
+// yet (flagged to warden as an optional title/summary field; dark-safe additive like
+// choices/commands). Robust regardless of how the ask was written.
+const SUMMARY_CLIP = 72;
 
-function isDense(item: WardenItem): boolean {
-    const q = item.q ?? '';
-    return q.length > DENSE_CHARS || q.includes('\n');
+function summarize(q: string): { headline: string; summary: string | null; body: string; hasMore: boolean } {
+    const body = (q ?? '').trim();
+    const lines = body.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
+    const headline = lines[0] ?? body;
+    const summary = lines.length > 1 ? lines[1] : null;
+    const hasMore = lines.length > 2
+        || headline.length > SUMMARY_CLIP
+        || (summary != null && summary.length > SUMMARY_CLIP)
+        || (summary == null && body.length > SUMMARY_CLIP);
+    return { headline, summary, body, hasMore };
 }
 
 function KnockCard({ item, optimisticAnswer, errored, onAnswer }: {
@@ -81,7 +90,10 @@ function KnockCard({ item, optimisticAnswer, errored, onAnswer }: {
     // operations are tap-to-copy, not a wall to retype. Dark-safe: absent -> prose.
     const commands = item.commands ?? [];
     const hasCommands = commands.length > 0;
-    const dense = isDense(item) || hasCommands;
+    const { headline, summary, body, hasMore } = summarize(item.q);
+    // Expandable when there's body beyond the headline+summary, a context line, or
+    // operational commands to reveal.
+    const expandable = hasMore || hasCommands || !!item.ctx;
     const [detailsOpen, setDetailsOpen] = React.useState(false);
 
     // Per-command copy with quiet inline feedback (the copy glyph flips to a check
@@ -128,15 +140,26 @@ function KnockCard({ item, optimisticAnswer, errored, onAnswer }: {
                 )}
             </View>
 
-            <Text style={styles.ask} numberOfLines={dense && !detailsOpen ? REST_LINES : undefined}>
-                {item.q}
-            </Text>
+            {/* At rest: a tight headline + one-line summary (scans in ~2s). Tap the text
+                or the chevron to reveal the full accreted body + context + commands. */}
+            <Pressable onPress={expandable ? () => setDetailsOpen((v) => !v) : undefined} disabled={!expandable}>
+                {detailsOpen ? (
+                    <Text style={styles.ask}>{body}</Text>
+                ) : (
+                    <>
+                        <Text style={styles.headline} numberOfLines={2}>{headline}</Text>
+                        {summary ? (
+                            <Text style={styles.summary} numberOfLines={1}>{summary}</Text>
+                        ) : null}
+                    </>
+                )}
+            </Pressable>
 
-            {item.ctx ? (
+            {detailsOpen && item.ctx ? (
                 <Text style={styles.ctx}>{item.ctx}</Text>
             ) : null}
 
-            {dense ? (
+            {expandable ? (
                 <Pressable onPress={() => setDetailsOpen((v) => !v)} hitSlop={8} style={styles.detailsToggle}>
                     <Text style={styles.detailsChevron}>{detailsOpen ? '▴' : '▾'}</Text>
                 </Pressable>
@@ -417,6 +440,20 @@ const styles = StyleSheet.create((theme) => ({
         fontSize: 15,
         color: theme.colors.text,
         lineHeight: 20,
+        ...Typography.default(),
+    },
+    // The at-rest headline — the tight scannable ask (the wall folds behind the chevron).
+    headline: {
+        fontSize: 15,
+        color: theme.colors.text,
+        lineHeight: 20,
+        ...Typography.default('semiBold'),
+    },
+    summary: {
+        fontSize: 13,
+        color: theme.colors.textSecondary,
+        lineHeight: 18,
+        marginTop: 2,
         ...Typography.default(),
     },
     ctx: {
