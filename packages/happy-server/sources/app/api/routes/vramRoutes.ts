@@ -72,6 +72,17 @@ const VramEngineSchema = z.object({
     }).nullish(),
 });
 
+// Honest-staleness backstop (#170 — never render fake-fresh over a dead feed). The
+// feed file is only rewritten when device-health's cadenced `status` runs; if that
+// refresher ever dies, a successfully-PARSING but TEMPORALLY-OLD file would be served
+// as `stale: false` = a lying-fresh gauge. So we age-gate on the file's own `ts`: a
+// reading older than this is reported `stale: true` (the client's LOUD-guard then
+// keeps last-good and goes loud), rather than a confident stale number. Generous
+// enough to tolerate a few missed beats of device-health's ~1-2min cadence; only
+// applied when `ts` is parseable (a feed with no usable timestamp can't be age-judged,
+// so we serve it as-is and rely on the hard fetch/parse LOUD-guard instead).
+const STALE_AFTER_MS = 5 * 60 * 1000;
+
 // device-health flip-flopped the filename (vram-engine.json <-> vram-sentinel.json);
 // rather than chase it, read BOTH candidates and use the freshest that parses —
 // robust to whichever the engine settles on, and to a future rename.
@@ -107,7 +118,13 @@ function readVram(): { view: z.infer<typeof VramEngineSchema> | null; stale: boo
             best = { view: parsed.data, ts };
         }
     }
-    return best ? { view: best.view, stale: false } : { view: null, stale: true };
+    if (!best) {
+        return { view: null, stale: true };
+    }
+    // Age-gate on the file's own ts (epoch ms; 0 = unparseable/absent -> can't judge
+    // age, serve as-is). A too-old reading is honest-stale, never a lying-fresh number.
+    const ageStale = best.ts > 0 && (Date.now() - best.ts) > STALE_AFTER_MS;
+    return { view: best.view, stale: ageStale };
 }
 
 export function vramRoutes(app: Fastify) {
