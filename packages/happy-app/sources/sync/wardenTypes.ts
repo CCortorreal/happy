@@ -20,6 +20,16 @@ export const WardenChoiceSchema = z.object({
     recommended: z.boolean().nullish(),
 });
 
+// A structured command on a terminal gate (Carlos's feedback, infra's `ask
+// --commands`). OPTIONAL and additive — exact mirror of `choices`: present ->
+// render each command individually copyable with its explainer; absent -> the
+// operational wall stays as prose behind the details-fold. Dark-safe until a lane
+// authors structured commands. `explain` is the plain-language "what this does".
+export const WardenCommandSchema = z.object({
+    cmd: z.string(),
+    explain: z.string().nullish(),
+});
+
 export const WardenItemSchema = z.object({
     id: z.string(),
     from: z.string(),
@@ -29,6 +39,7 @@ export const WardenItemSchema = z.object({
     ctx: z.string().nullable(),
     ref: z.string().nullable(),
     choices: z.array(WardenChoiceSchema).nullish(),
+    commands: z.array(WardenCommandSchema).nullish(),
     a: z.string().nullable(),
     answered_ts: z.string().nullable(),
 });
@@ -47,6 +58,7 @@ export const WardenAnswerResponseSchema = z.object({
 });
 
 export type WardenChoice = z.infer<typeof WardenChoiceSchema>;
+export type WardenCommand = z.infer<typeof WardenCommandSchema>;
 export type WardenItem = z.infer<typeof WardenItemSchema>;
 export type WardenResponse = z.infer<typeof WardenResponseSchema>;
 export type WardenAnswerResponse = z.infer<typeof WardenAnswerResponseSchema>;

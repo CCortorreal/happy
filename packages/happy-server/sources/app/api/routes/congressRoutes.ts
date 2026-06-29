@@ -19,11 +19,32 @@ import { join } from "node:path";
 // One roster row as published by `seats-oracle --json`. Every field is optional
 // at the read boundary except the load-bearing JOIN key; we normalize defensively
 // because the file is script-written and re-read on a timer.
+// Phase 1 OVERSEE additions (additive, dark-safe): per-lane health (magnitude +
+// named-cause moodlets), the directional bottleneck signal, and the raw
+// last-assistant-text the renderer voices into the thought-line. ORACLE = raw
+// signals; RENDERER = voicing — no phrasing here.
+const CongressHealthSchema = z.object({
+    score: z.number(),
+    causes: z.array(z.object({
+        sign: z.string(),
+        label: z.string(),
+        magnitude: z.number().nullish(),
+    })).nullish(),
+});
+const CongressBottleneckSchema = z.object({
+    direction: z.string(),
+    approximate: z.boolean().nullish(),
+});
+
 const CongressSeatSchema = z.object({
     seat: z.string(),
     // JOIN key → session.id for session rows; NULL for worker rows (a worker is
     // watched, not a conversable session). Switch on `kind`, not on cuid===null.
     cuid: z.string().nullable(),
+    // claudeSid = the transcript/Claude session id — STABLE + daemon-independent
+    // (survives daemon restarts that churn cuid). The robust JOIN key: roster
+    // claudeSid === session.metadata.claudeSessionId. cuid stays as a fallback.
+    claudeSid: z.string().nullish(),
     verdict: z.string(),    // oracle liveness verdict → status (locked over session.active)
     kind: z.string().nullish(),     // 'session' (default) | 'worker'
     role: z.string().nullish(),
@@ -37,6 +58,14 @@ const CongressSeatSchema = z.object({
     currentWork: z.string().nullish(),
     workStatus: z.string().nullish(),
     startedAt: z.union([z.string(), z.number()]).nullish(),
+    // contextFill = the lane's current context tokens (the oracle already emits it).
+    // Surfaced as the OVERSEE "context %" pressure cue (toward the 750K auto-compact
+    // fire). The first MONITOR signal on the tile.
+    contextFill: z.number().nullish(),
+    // Phase 1 OVERSEE (dark-safe until the oracle emits).
+    health: CongressHealthSchema.nullish(),
+    bottleneck: CongressBottleneckSchema.nullish(),
+    lastAssistantText: z.string().nullish(),
 });
 
 // The oracle's native envelope key is `roster` (its name across the whole
@@ -44,10 +73,22 @@ const CongressSeatSchema = z.object({
 // `roster` first and keep `seats` + bare-array as tolerant fallbacks. Each row
 // may also carry an extra `cwd` field; Zod strips unknown keys, so it's ignored.
 const CongressRosterFileSchema = z.object({
-    ts: z.number().nullish(),
+    // The oracle emits `ts` as an ISO STRING (it switched from epoch); accept both
+    // so the whole-file parse never fails on it (a number-only schema here was
+    // silently emptying the entire roster -> the live Hearthside never formed).
+    ts: z.union([z.string(), z.number()]).nullish(),
     roster: z.array(CongressSeatSchema).nullish(),
     seats: z.array(CongressSeatSchema).nullish(),
 });
+
+// Normalize the oracle `ts` (ISO string or epoch number) to epoch ms for the
+// number-typed wire contract; unparseable -> null (honest staleness).
+function normalizeTs(ts: string | number | null | undefined): number | null {
+    if (ts == null) return null;
+    if (typeof ts === 'number') return ts;
+    const parsed = Date.parse(ts);
+    return Number.isFinite(parsed) ? parsed : null;
+}
 
 function rosterFilePath(): string {
     const home = process.env.USERPROFILE || process.env.HOME || '';
@@ -82,7 +123,7 @@ function readRoster(): { ts: number | null; seats: z.infer<typeof CongressSeatSc
     }
 
     return {
-        ts: parsed.data.ts ?? null,
+        ts: normalizeTs(parsed.data.ts),
         seats: parsed.data.roster ?? parsed.data.seats ?? [],
         stale: false,
     };
@@ -100,6 +141,7 @@ export function congressRoutes(app: Fastify) {
                     seats: z.array(z.object({
                         seat: z.string(),
                         cuid: z.string().nullable(),
+                        claudeSid: z.string().nullable(),
                         verdict: z.string(),
                         kind: z.string().nullable(),
                         role: z.string().nullable(),
@@ -112,6 +154,20 @@ export function congressRoutes(app: Fastify) {
                         currentWork: z.string().nullable(),
                         workStatus: z.string().nullable(),
                         startedAt: z.string().nullable(),
+                        contextFill: z.number().nullable(),
+                        health: z.object({
+                            score: z.number(),
+                            causes: z.array(z.object({
+                                sign: z.string(),
+                                label: z.string(),
+                                magnitude: z.number().nullable(),
+                            })).nullable(),
+                        }).nullable(),
+                        bottleneck: z.object({
+                            direction: z.string(),
+                            approximate: z.boolean().nullable(),
+                        }).nullable(),
+                        lastAssistantText: z.string().nullable(),
                     })),
                 })
             }
@@ -125,6 +181,7 @@ export function congressRoutes(app: Fastify) {
             seats: seats.map((s) => ({
                 seat: s.seat,
                 cuid: s.cuid,
+                claudeSid: s.claudeSid ?? null,
                 verdict: s.verdict,
                 kind: s.kind ?? null,
                 role: s.role ?? null,
@@ -138,6 +195,21 @@ export function congressRoutes(app: Fastify) {
                 workStatus: s.workStatus ?? null,
                 // Normalize startedAt (may be ISO string or epoch number) to a string.
                 startedAt: s.startedAt == null ? null : String(s.startedAt),
+                contextFill: s.contextFill ?? null,
+                health: s.health
+                    ? {
+                        score: s.health.score,
+                        causes: s.health.causes?.map((c) => ({
+                            sign: c.sign,
+                            label: c.label,
+                            magnitude: c.magnitude ?? null,
+                        })) ?? null,
+                    }
+                    : null,
+                bottleneck: s.bottleneck
+                    ? { direction: s.bottleneck.direction, approximate: s.bottleneck.approximate ?? null }
+                    : null,
+                lastAssistantText: s.lastAssistantText ?? null,
             })),
         });
     });

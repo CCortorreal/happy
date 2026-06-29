@@ -50,6 +50,7 @@ function makeSession(id: string, name: string, overrides: Partial<SessionRowData
         completedTodosCount: 0,
         totalTodosCount: 0,
         hasUnread: false,
+        claudeSessionId: null,
         ...overrides,
     };
 }

@@ -94,6 +94,10 @@ export interface SessionRowData {
     completedTodosCount: number;
     totalTodosCount: number;
     hasUnread: boolean;
+    // The Claude transcript session id — the STABLE, daemon-independent JOIN key
+    // for the congress roster (roster.claudeSid === this). Survives daemon
+    // restarts that churn the cuid (session.id).
+    claudeSessionId: string | null;
 }
 
 function buildSessionRowData(session: Session, unreadSessionIds?: Set<string>): SessionRowData {
@@ -127,6 +131,7 @@ function buildSessionRowData(session: Session, unreadSessionIds?: Set<string>): 
         completedTodosCount: session.todos?.filter(todo => todo.status === 'completed').length ?? 0,
         totalTodosCount: session.todos?.length ?? 0,
         hasUnread: unreadSessionIds?.has(session.id) ?? false,
+        claudeSessionId: session.metadata?.claudeSessionId ?? null,
     };
 }
 

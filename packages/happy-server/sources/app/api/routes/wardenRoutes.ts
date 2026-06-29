@@ -32,6 +32,15 @@ const WardenChoiceSchema = z.object({
     recommended: z.boolean().nullish(),
 });
 
+// Optional structured commands on a terminal gate (Carlos's feedback; infra's
+// for-carlos.mjs `ask --commands` producer). Additive mirror of choices[]: a lane
+// authors {cmd, explain}; absent -> the operational wall stays prose behind the
+// client's details-fold. Dark-safe until the producer lands.
+const WardenCommandSchema = z.object({
+    cmd: z.string(),
+    explain: z.string().nullish(),
+});
+
 const WardenItemSchema = z.object({
     id: z.string(),
     from: z.string(),
@@ -41,6 +50,7 @@ const WardenItemSchema = z.object({
     ctx: z.string().nullish(),          // the why / cascade
     ref: z.string().nullish(),          // quiet handle to the underlying thing
     choices: z.array(WardenChoiceSchema).nullish(),
+    commands: z.array(WardenCommandSchema).nullish(),
     a: z.string().nullish(),            // the answer, once given
     answered_ts: z.string().nullish(),
 });
@@ -116,6 +126,10 @@ export function wardenRoutes(app: Fastify) {
                             label: z.string(),
                             recommended: z.boolean().nullable(),
                         })).nullable(),
+                        commands: z.array(z.object({
+                            cmd: z.string(),
+                            explain: z.string().nullable(),
+                        })).nullable(),
                         a: z.string().nullable(),
                         answered_ts: z.string().nullable(),
                     })),
@@ -139,6 +153,10 @@ export function wardenRoutes(app: Fastify) {
                     key: c.key,
                     label: c.label,
                     recommended: c.recommended ?? null,
+                })) ?? null,
+                commands: i.commands?.map((c) => ({
+                    cmd: c.cmd,
+                    explain: c.explain ?? null,
                 })) ?? null,
                 a: i.a ?? null,
                 answered_ts: i.answered_ts ?? null,

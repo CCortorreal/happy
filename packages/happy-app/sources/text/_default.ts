@@ -524,12 +524,16 @@ export const en = {
         answered: 'Answered',
         reference: 'Reference',
         from: ({ name }: { name: string }) => `from ${name}`,  // sender line
-        affirm: 'Yes, go ahead',
+        affirm: 'Go ahead',
         decline: 'Not now',
-        replyPlaceholder: 'Write back…',
-        sendFailed: "Couldn't send — retry",
+        replyPlaceholder: 'write back…',
+        sendFailed: "couldn't send — retry",
         acknowledged: ({ to }: { to: string }) => `Got it — sent to ${to}`,
-        recommends: ({ name, choice }: { name: string; choice: string }) => `${name} leans ${choice}`,
+        // Chip-adjacent cue: the recommended chip already shows the choice, so we
+        // point at it ("leans this way"), not restate the letter. `choice` stays in
+        // the signature for now so the 9 translated locales remain type-valid until
+        // i18n-translator rewrites them to the choice-less phrasing (then drop it).
+        recommends: ({ name, choice }: { name: string; choice: string }) => `${name} leans this way`,
     },
 
     worker: {

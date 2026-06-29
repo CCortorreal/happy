@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { View, TextInput, Pressable } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { Text } from '@/components/StyledText';
 import { StyleSheet, useUnistyles } from 'react-native-unistyles';
 import { Typography } from '@/constants/Typography';
@@ -10,26 +11,48 @@ import { answerWarden } from '@/sync/apiWarden';
 import { TokenStorage } from '@/auth/tokenStorage';
 import { t } from '@/text';
 
-// WardenKnocks — Hearth P1 RELATE + Slice A (answering).
+// WardenKnocks — Hearth P1 RELATE + Slice A (answering) + Tuning Round 1.
 //
 // Renders the Warden's for-carlos asks as knock-cards (notes a person left, never
 // alerts) and lets Carlos REPLY to them in-UI. Answering = replying to a note, not
 // operating a console (loom's interaction contract):
 //   - inline affordance ON the card (never a modal/popped form);
 //   - universal pair: affirm / decline + a one-line quick-reply (Enter sends);
-//     tap-a-choice is `choices`-gated and degrades to quick-reply (no field yet);
-//   - never auto-select; the lane's recommendation rides in the prose, not a default;
-//   - on answer: optimistic settle (the card eases into answered-resting, dimmed,
-//     sinks below open gates, never re-gates) + a warm acknowledgment;
+//     tap-a-choice is `choices`-gated and degrades to quick-reply when absent;
+//   - never auto-select; the lane's recommendation is a quiet cue, not a default;
+//   - on answer: optimistic settle + a warm acknowledgment; never re-gates;
 //   - the client NEVER writes the file — it POSTs to the server, which routes the
 //     answer through the for-carlos.mjs verb (write + channel route-back to the lane);
 //   - keep the draft on failure: a quiet "couldn't send — retry", never a lost reply.
+//
+// Tuning Round 1 (loom, from the overseer's live render-pass):
+//   [1] OPEN-DEFAULT + ANSWERED-HISTORY FOLD — the active mantel shows OPEN asks
+//       only (quiet when none open); answered cards collapse into an expandable
+//       "answered" history (de-emphasize, never delete — the conversation record).
+//   [2] DETAILS-FOLD — a command-dense ask (raw commands embedded in the prose)
+//       tips a card from warm-note toward triage-console. The card stays a note at
+//       rest (first lines = the plain-language ask) and folds the operational tail
+//       behind a disclosure chevron. Content-agnostic (length/overflow), so it's
+//       robust regardless of how a lane writes the ask.
+//   [3] GROUP BY ref — asks that share a `ref` cluster visually (HIDE NOTHING; no
+//       fuzzy similarity-guessing — only an exact ref match groups).
 //
 // Manners (render spec): render NOTHING when empty; never steal focus; gate = red
 // left-edge (blocks), routine = lilac (optional).
 
 const ACCENT_GATE = '#E5484D';
 const ACCENT_ROUTINE = '#9B7EDE';
+
+// A card is "dense" when the ask carries an operational wall (long prose or
+// embedded multi-line commands). We fold the tail behind a chevron rather than
+// parse it — robust regardless of how the lane wrote the ask.
+const DENSE_CHARS = 200;
+const REST_LINES = 3;
+
+function isDense(item: WardenItem): boolean {
+    const q = item.q ?? '';
+    return q.length > DENSE_CHARS || q.includes('\n');
+}
 
 function KnockCard({ item, optimisticAnswer, errored, onAnswer }: {
     item: WardenItem;
@@ -47,18 +70,43 @@ function KnockCard({ item, optimisticAnswer, errored, onAnswer }: {
     // failed send never loses what Carlos typed.
     const [draft, setDraft] = React.useState('');
 
+    // Details fold: the ask rests as a note (REST_LINES); the operational tail folds
+    // behind a chevron. Bare disclosure glyph — no new i18n string this round; loom
+    // owns whether a "details" label lands in the coordinated i18n pass.
+    //
+    // Terminal gates (Carlos's feedback): a lane can attach structured `commands`
+    // ({cmd, explain}). When present they render inside the fold as individually
+    // copyable rows with explainers — so the gate stays a note at rest and the
+    // operations are tap-to-copy, not a wall to retype. Dark-safe: absent -> prose.
+    const commands = item.commands ?? [];
+    const hasCommands = commands.length > 0;
+    const dense = isDense(item) || hasCommands;
+    const [detailsOpen, setDetailsOpen] = React.useState(false);
+
+    // Per-command copy with quiet inline feedback (the copy glyph flips to a check
+    // for a beat) — never a modal, per the Hearth's manners.
+    const [copiedIdx, setCopiedIdx] = React.useState<number | null>(null);
+    const copyCmd = React.useCallback(async (idx: number, cmd: string) => {
+        try {
+            await Clipboard.setStringAsync(cmd);
+            setCopiedIdx(idx);
+            setTimeout(() => setCopiedIdx((c) => (c === idx ? null : c)), 1500);
+        } catch {
+            // Clipboard can reject (web permissions) — stay quiet, the cmd is still visible.
+        }
+    }, []);
+
     const submit = (text: string) => {
         const trimmed = text.trim();
         if (!trimmed) return;
         onAnswer(item.id, trimmed);
     };
 
-    // Affirm carries the draft as a caveat when present ("Yes — go ahead. <note>").
+    // Affirm carries the draft as a caveat when present ("Go ahead — <note>").
     const submitAffirm = () => submit(draft.trim() ? `${t('warden.affirm')} — ${draft.trim()}` : t('warden.affirm'));
 
-    // Tap-a-choice: present only when a lane has structured its options (reaper's
-    // A/B first). Absent -> the universal affirm/decline + quick-reply pair. Never
-    // auto-selected; the recommendation is a quiet cue, not a default.
+    // Tap-a-choice: present only when a lane has structured its options. Absent ->
+    // the universal affirm/decline + quick-reply pair. Never auto-selected.
     const choices = item.choices ?? [];
     const hasChoices = choices.length > 0;
     const recommended = choices.find((c) => c.recommended);
@@ -79,10 +127,38 @@ function KnockCard({ item, optimisticAnswer, errored, onAnswer }: {
                 )}
             </View>
 
-            <Text style={styles.ask}>{item.q}</Text>
+            <Text style={styles.ask} numberOfLines={dense && !detailsOpen ? REST_LINES : undefined}>
+                {item.q}
+            </Text>
 
             {item.ctx ? (
                 <Text style={styles.ctx}>{item.ctx}</Text>
+            ) : null}
+
+            {dense ? (
+                <Pressable onPress={() => setDetailsOpen((v) => !v)} hitSlop={8} style={styles.detailsToggle}>
+                    <Text style={styles.detailsChevron}>{detailsOpen ? '▴' : '▾'}</Text>
+                </Pressable>
+            ) : null}
+
+            {detailsOpen && hasCommands ? (
+                <View style={styles.commandsBlock}>
+                    {commands.map((c, idx) => (
+                        <View key={idx} style={styles.cmdRow}>
+                            <Pressable
+                                onPress={() => copyCmd(idx, c.cmd)}
+                                hitSlop={6}
+                                style={styles.cmdLine}
+                            >
+                                <Text style={styles.cmdText} numberOfLines={3}>{c.cmd}</Text>
+                                <Text style={styles.cmdCopyHint}>{copiedIdx === idx ? '✓' : '⧉'}</Text>
+                            </Pressable>
+                            {c.explain ? (
+                                <Text style={styles.cmdExplain}>{c.explain}</Text>
+                            ) : null}
+                        </View>
+                    ))}
+                </View>
             ) : null}
 
             {answered ? (
@@ -150,12 +226,38 @@ function KnockCard({ item, optimisticAnswer, errored, onAnswer }: {
     );
 }
 
+// Group open asks by exact `ref`: 2+ sharing a ref cluster under one quiet label;
+// everything else stands alone. We never hide a card and never guess similarity —
+// only an identical ref groups (a fuzzy match would bury a lane's distinct framing).
+type OpenGroup = { ref: string | null; items: WardenItem[] };
+
+function groupByRef(open: WardenItem[]): OpenGroup[] {
+    const counts = new Map<string, number>();
+    for (const i of open) {
+        if (i.ref) counts.set(i.ref, (counts.get(i.ref) ?? 0) + 1);
+    }
+    const groups: OpenGroup[] = [];
+    const seen = new Set<string>();
+    for (const i of open) {
+        if (i.ref && (counts.get(i.ref) ?? 0) > 1) {
+            if (seen.has(i.ref)) continue;
+            seen.add(i.ref);
+            groups.push({ ref: i.ref, items: open.filter((x) => x.ref === i.ref) });
+        } else {
+            groups.push({ ref: null, items: [i] });
+        }
+    }
+    return groups;
+}
+
 export function WardenKnocks() {
     const items = useWarden();
     // Optimistic answers (id -> text) shown immediately; reconciled by the next poll
     // once the server's write lands. Cleared if the POST fails (with a retry hint).
     const [overlay, setOverlay] = React.useState<Record<string, string>>({});
     const [errors, setErrors] = React.useState<Record<string, boolean>>({});
+    // Answered history is collapsed by default — the active mantel stays clean.
+    const [historyOpen, setHistoryOpen] = React.useState(false);
 
     const onAnswer = React.useCallback(async (id: string, text: string) => {
         setErrors((e) => ({ ...e, [id]: false }));
@@ -174,27 +276,64 @@ export function WardenKnocks() {
         }
     }, []);
 
-    if (items.length === 0) {
+    const isAnswered = (i: WardenItem) => !!i.a || !!overlay[i.id];
+    const open = items.filter((i) => !isAnswered(i));
+    const answered = items.filter(isAnswered);
+
+    // The absence of a knock IS the all-clear — render nothing when there's no
+    // history and nothing open.
+    if (open.length === 0 && answered.length === 0) {
         return null;
     }
 
-    // Open asks lead; answered (real or optimistic) settle below.
-    const isAnswered = (i: WardenItem) => !!i.a || !!overlay[i.id];
-    const ordered = [...items.filter((i) => !isAnswered(i)), ...items.filter(isAnswered)];
+    const card = (item: WardenItem) => (
+        <KnockCard
+            key={item.id}
+            item={item}
+            optimisticAnswer={overlay[item.id]}
+            errored={errors[item.id]}
+            onAnswer={onAnswer}
+        />
+    );
+
+    const openGroups = groupByRef(open);
 
     return (
         <View style={styles.wrapper}>
             <View style={styles.container}>
-                <Text style={styles.sectionTitle}>{t('warden.sectionTitle')}</Text>
-                {ordered.map((item) => (
-                    <KnockCard
-                        key={item.id}
-                        item={item}
-                        optimisticAnswer={overlay[item.id]}
-                        errored={errors[item.id]}
-                        onAnswer={onAnswer}
-                    />
-                ))}
+                {open.length > 0 ? (
+                    <>
+                        <Text style={styles.sectionTitle}>{t('warden.sectionTitle')}</Text>
+                        {openGroups.map((g, idx) =>
+                            g.items.length > 1 ? (
+                                <View key={g.ref ?? idx} style={styles.refCluster}>
+                                    <Text style={styles.refClusterLabel} numberOfLines={1}>
+                                        {t('warden.reference')}: {g.ref}
+                                    </Text>
+                                    {g.items.map(card)}
+                                </View>
+                            ) : (
+                                card(g.items[0])
+                            )
+                        )}
+                    </>
+                ) : null}
+
+                {answered.length > 0 ? (
+                    <View style={styles.history}>
+                        <Pressable
+                            onPress={() => setHistoryOpen((v) => !v)}
+                            hitSlop={8}
+                            style={styles.historyHeader}
+                        >
+                            <Text style={styles.historyChevron}>{historyOpen ? '▾' : '▸'}</Text>
+                            <Text style={styles.historyTitle}>
+                                {t('warden.answered')} · {answered.length}
+                            </Text>
+                        </Pressable>
+                        {historyOpen ? answered.map(card) : null}
+                    </View>
+                ) : null}
             </View>
         </View>
     );
@@ -272,6 +411,54 @@ const styles = StyleSheet.create((theme) => ({
         color: theme.colors.textSecondary,
         lineHeight: 18,
         marginTop: 6,
+        ...Typography.default(),
+    },
+    detailsToggle: {
+        alignSelf: 'flex-start',
+        marginTop: 4,
+        paddingVertical: 2,
+        paddingHorizontal: 6,
+    },
+    detailsChevron: {
+        fontSize: 14,
+        color: theme.colors.textSecondary,
+        lineHeight: 16,
+    },
+    // Terminal-gate commands — each a tap-to-copy row with its explainer. Reads as
+    // a quiet checklist, not a console block.
+    commandsBlock: {
+        marginTop: 8,
+        gap: 8,
+    },
+    cmdRow: {
+        gap: 2,
+    },
+    cmdLine: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: theme.colors.divider,
+        borderRadius: 6,
+        paddingHorizontal: 8,
+        paddingVertical: 6,
+        backgroundColor: theme.colors.groupped.background,
+    },
+    cmdText: {
+        flex: 1,
+        fontSize: 12,
+        color: theme.colors.text,
+        ...Typography.mono(),
+    },
+    cmdCopyHint: {
+        fontSize: 13,
+        color: theme.colors.textSecondary,
+    },
+    cmdExplain: {
+        fontSize: 12,
+        color: theme.colors.textSecondary,
+        lineHeight: 16,
+        marginLeft: 2,
         ...Typography.default(),
     },
     answer: {
@@ -363,5 +550,45 @@ const styles = StyleSheet.create((theme) => ({
         color: theme.colors.textSecondary,
         marginTop: 6,
         ...Typography.default(),
+    },
+    // [3] ref cluster — a quiet bracket around asks that share a ref. The shared
+    // ref shows once as the cluster label; the per-card reference line drops out
+    // visually by virtue of being the same string (kept on the card for clarity).
+    refCluster: {
+        borderLeftWidth: StyleSheet.hairlineWidth,
+        borderLeftColor: theme.colors.divider,
+        paddingLeft: 8,
+        marginBottom: 8,
+    },
+    refClusterLabel: {
+        fontSize: 11,
+        color: theme.colors.textSecondary,
+        marginBottom: 6,
+        marginLeft: 2,
+        ...Typography.default('semiBold'),
+    },
+    // [1] answered history — collapsed by default; the conversation record kept
+    // out of the active surface's way.
+    history: {
+        marginTop: 4,
+    },
+    historyHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingVertical: 6,
+        marginLeft: 4,
+    },
+    historyChevron: {
+        fontSize: 12,
+        color: theme.colors.groupped.sectionTitle,
+        lineHeight: 14,
+    },
+    historyTitle: {
+        fontSize: 13,
+        color: theme.colors.groupped.sectionTitle,
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+        ...Typography.default('semiBold'),
     },
 }));

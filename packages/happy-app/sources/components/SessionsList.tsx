@@ -23,6 +23,7 @@ import { useSettingMutable } from '@/sync/storage';
 import { useCongressRoster } from '@/hooks/useCongressRoster';
 import { CongressSeat } from '@/sync/congressTypes';
 import { WardenKnocks } from './WardenKnocks';
+import { VramGauge } from './VramGauge';
 import { WorkerCard } from './WorkerCard';
 import { t } from '@/text';
 
@@ -152,6 +153,29 @@ const stylesheet = StyleSheet.create((theme) => ({
         marginTop: 2,
         marginRight: 4,
     },
+    bottleneckGlyph: {
+        marginRight: 4,
+    },
+    contextPct: {
+        marginLeft: 'auto',
+        paddingLeft: 8,
+        fontSize: 11,
+        ...Typography.default('semiBold'),
+    },
+    // LOUD-guard banner — a quiet-but-visible "the feed is broken, not empty" line.
+    rosterUnreachable: {
+        width: '100%',
+        maxWidth: layout.maxWidth,
+        alignSelf: 'center',
+        paddingHorizontal: 16,
+        paddingVertical: 6,
+    },
+    rosterUnreachableText: {
+        fontSize: 12,
+        color: '#E5484D',
+        letterSpacing: 0.3,
+        ...Typography.default('semiBold'),
+    },
     statusText: {
         fontSize: 12,
         fontWeight: '500',
@@ -207,7 +231,9 @@ const stylesheet = StyleSheet.create((theme) => ({
 // data untouched — zero behavior change. When matches exist, the matched session
 // rows are moved out of their date/active groups into a single "Hearthside"
 // section, and any section title left empty by the move is dropped. The JOIN is
-// the locked invariant cuid === session.id.
+// the JOIN key claudeSid === session.metadata.claudeSessionId (stable, daemon-
+// independent), with cuid === session.id as a fallback. `congressIds` is the set
+// of BOTH key spaces (see useCongressRoster's dual-key map).
 function buildHearthsideViewData(
     data: SessionListViewItem[],
     congressIds: Set<string>,
@@ -217,12 +243,16 @@ function buildHearthsideViewData(
         return data;
     }
 
+    // A row is a congress lane if EITHER key hits: claudeSid (primary) or cuid.
+    const isCongress = (s: SessionRowData) =>
+        (s.claudeSessionId != null && congressIds.has(s.claudeSessionId)) || congressIds.has(s.id);
+
     const congressRows: SessionListViewItem[] = [];
     const rest: SessionListViewItem[] = [];
 
     for (const item of data) {
         if (item.type === 'session') {
-            if (congressIds.has(item.session.id)) {
+            if (isCongress(item.session)) {
                 congressRows.push(item);
             } else {
                 rest.push(item);
@@ -233,11 +263,11 @@ function buildHearthsideViewData(
             // Pull any congress seats out of the compact active group and render
             // them as full Hearthside cards (so they get role/pedal + verdict).
             for (const s of item.sessions) {
-                if (congressIds.has(s.id)) {
+                if (isCongress(s)) {
                     congressRows.push({ type: 'session', session: s });
                 }
             }
-            const remaining = item.sessions.filter((s) => !congressIds.has(s.id));
+            const remaining = item.sessions.filter((s) => !isCongress(s));
             if (remaining.length > 0) {
                 rest.push({ type: 'active-sessions', sessions: remaining });
             }
@@ -293,6 +323,11 @@ export function SessionsList({ previewData, previewRoster, previewWorkers }: Ses
     const data = previewData ?? liveData;
     const roster = previewRoster ?? liveRoster.sessions;
     const workers = previewWorkers ?? liveRoster.workers;
+    // LOUD-guard: when the roster feed is persistently unreachable AND we have
+    // nothing to show, say so loudly rather than render a silent blank (which would
+    // be indistinguishable from a genuinely quiet congress — the masking bug). Copy
+    // is a plain string pending loom's i18n pass (she owns the LOUD wording).
+    const rosterUnreachable = !previewRoster && liveRoster.unreachable;
     // Project the congress roster onto the visible list: a Hearthside group at
     // the top (session-JOIN cards + worker cards). Untouched when both are empty.
     const viewData = React.useMemo(() => {
@@ -401,7 +436,7 @@ export function SessionsList({ previewData, previewRoster, previewWorkers }: Ses
                 return (
                     <SessionItem
                         session={item.session}
-                        congressSeat={roster.get(item.session.id)}
+                        congressSeat={(item.session.claudeSessionId != null ? roster.get(item.session.claudeSessionId) : undefined) ?? roster.get(item.session.id)}
                         selected={selected}
                         isFirst={isFirst}
                         isLast={isLast}
@@ -420,6 +455,8 @@ export function SessionsList({ previewData, previewRoster, previewWorkers }: Ses
             <>
                 {/* The Warden's notes on the mantel — renders nothing when empty. */}
                 <WardenKnocks />
+                {/* MONITOR pillar: the VRAM gauge (loom owns final placement/feel). */}
+                <VramGauge />
                 <UpdateBanner />
             </>
         );
@@ -430,6 +467,13 @@ export function SessionsList({ previewData, previewRoster, previewWorkers }: Ses
     return (
         <View style={styles.container}>
             <View style={styles.contentContainer}>
+                {rosterUnreachable ? (
+                    <View style={styles.rosterUnreachable}>
+                        <Text style={styles.rosterUnreachableText} numberOfLines={1}>
+                            can’t reach the congress right now
+                        </Text>
+                    </View>
+                ) : null}
                 <FlatList
                     data={viewData}
                     renderItem={renderItem}
@@ -453,17 +497,6 @@ const STATUS_CONFIG: Record<SessionState, { color: string; dotColor: string; isP
     permission_required: { color: '#FF9500', dotColor: '#FF9500', isPulsing: true, isConnected: true },
 };
 
-// Congress liveness from the oracle verdict — derived-fail-closed (#170): a lane
-// reads ALIVE only when the verdict says so explicitly; everything else (DAEMON-
-// LOST, PID-DEAD, stale, unknown vocab) FAILS CLOSED to a dead/grey window. This
-// replaces the Session model's lying 15-min `active` flag for congress rows.
-function congressVerdictStatus(verdict: string): { color: string; dotColor: string; isPulsing: boolean; isConnected: boolean } {
-    const alive = verdict.trim().toUpperCase() === 'ALIVE';
-    return alive
-        ? { color: '#34C759', dotColor: '#34C759', isPulsing: false, isConnected: true }
-        : { color: '#999', dotColor: '#999', isPulsing: false, isConnected: false };
-}
-
 // The Hearthside identity line: role, with the pedal (the lane's current thread)
 // appended when present — e.g. "BUILD lane · happy-dev".
 function congressIdentity(seat: CongressSeat): string {
@@ -471,6 +504,70 @@ function congressIdentity(seat: CongressSeat): string {
     const pedal = seat.pedal?.trim();
     if (role && pedal) return `${role} · ${pedal}`;
     return role || pedal || seat.seat;
+}
+
+// Phase 1 OVERSEE — health → color (loom's universal red/amber/green/grey, same
+// semantics as every gauge). Derived honestly from the oracle verdict, refined by
+// `health`/`bottleneck` when present (dark-safe: verdict-only until they emit):
+//   green = ALIVE + healthy · amber = needs-attention (WEDGED / blocked-downstream
+//   / degrading) · red = dead-incident · grey = DAEMON-LOST / idle-cold / unknown
+//   (honest-not-alarming, fail-closed). Boring-when-healthy: calm green by default.
+const HEALTH_GREEN = '#34C759';
+const HEALTH_AMBER = '#FF9500';
+const HEALTH_RED = '#E5484D';
+const HEALTH_GREY = '#999';
+// Score scale is oracle-defined (loom/infra to confirm); we treat it as 0..1 with
+// a low-band amber, and ONLY refine — never override the honest verdict tier.
+const HEALTH_AMBER_BELOW = 0.5;
+
+function congressHealthStatus(seat: CongressSeat): { color: string; dotColor: string; isPulsing: boolean; isConnected: boolean } {
+    const v = seat.verdict.trim().toUpperCase();
+    const mk = (color: string, isConnected: boolean) => ({ color, dotColor: color, isPulsing: false, isConnected });
+    if (v === 'ALIVE') {
+        const lowScore = seat.health?.score != null && seat.health.score < HEALTH_AMBER_BELOW;
+        const blocked = seat.bottleneck?.direction === 'blocked-downstream';
+        return mk(lowScore || blocked ? HEALTH_AMBER : HEALTH_GREEN, true);
+    }
+    if (v === 'WEDGED') return mk(HEALTH_AMBER, true);
+    if (v.includes('DEAD') || v.includes('INCIDENT') || v.includes('CRASH')) return mk(HEALTH_RED, false);
+    // DAEMON-LOST / idle-cold / stale / unknown vocab → grey, fail-closed.
+    return mk(HEALTH_GREY, false);
+}
+
+// Phase 1 OVERSEE — the thought-line (the warmth lever). Voices the oracle's raw
+// ground-truth signals per loom's rules: currentWork (a real activity phrase) →
+// an honest pedal fallback ('on the unifying surface'). We deliberately do NOT
+// distill `lastAssistantText` yet — an honest pedal beats a confabulated line
+// (loom's call; revisit with her once it lights up). Honest-staleness: a lane
+// that isn't liveness-fresh never shows a present-tense "thought" — it reads
+// "(quiet — last: …)", greyed, never a frozen-fresh lie.
+function voiceThought(seat: CongressSeat): { text: string; stale: boolean } {
+    const alive = seat.verdict.trim().toUpperCase() === 'ALIVE';
+    const work = seat.currentWork?.trim();
+    // Humanize the pedal slug for warmth: 'cortorreal-writing-grounding' ->
+    // 'cortorreal writing grounding' (loom's voice tune). currentWork is already
+    // prose, so only the pedal fallback needs it.
+    const pedal = seat.pedal?.trim().replace(/-/g, ' ');
+    const raw = work || (pedal ? `on ${pedal}` : null) || seat.role?.trim() || null;
+    // NOTE: the connective words here ('on', 'quiet — last:', 'idle') are plain
+    // strings pending loom's queued i18n pass (the dynamic content — currentWork/
+    // pedal — is runtime data, not translatable). Dark until the oracle emits.
+    if (!alive) {
+        return { text: raw ? `quiet — last: ${raw}` : 'quiet', stale: true };
+    }
+    return { text: raw ?? 'idle', stale: false };
+}
+
+// Phase 1→2 (bounded cut): the OVERSEE context-pressure cue. contextFill (tokens)
+// rendered as a % toward the 750K auto-compact fire — the first MONITOR signal on
+// the tile, so Carlos can watch lanes climb toward their fire. Restrained: muted by
+// default, ambers/reds only as the pressure is earned. Dark-safe (null when absent).
+const CONTEXT_FIRE_TOKENS = 750_000;
+function contextPressure(seat: CongressSeat): { label: string; color: string } | null {
+    if (seat.contextFill == null) return null;
+    const pct = Math.round((seat.contextFill / CONTEXT_FIRE_TOKENS) * 100);
+    const color = pct >= 90 ? HEALTH_RED : pct >= 75 ? HEALTH_AMBER : '#999';
+    return { label: `${pct}%`, color };
 }
 
 const SessionItem = React.memo(({ session, congressSeat, selected, isFirst, isLast, isSingle }: {
@@ -487,8 +584,8 @@ const SessionItem = React.memo(({ session, congressSeat, selected, isFirst, isLa
     const baseStatus = STATUS_CONFIG[session.state];
     // Override to solid blue when session has unread results
     const status = congressSeat
-        // Congress lane: liveness is the oracle verdict, NOT session.state.
-        ? congressVerdictStatus(congressSeat.verdict)
+        // Congress lane: health → color (verdict tiers refined by health/bottleneck).
+        ? congressHealthStatus(congressSeat)
         : session.hasUnread
             ? { ...baseStatus, color: '#007AFF', dotColor: '#007AFF', isPulsing: false, isConnected: baseStatus.isConnected }
             : baseStatus;
@@ -497,9 +594,12 @@ const SessionItem = React.memo(({ session, congressSeat, selected, isFirst, isLa
         return vibingMessages[Math.floor(Math.random() * vibingMessages.length)].toLowerCase() + '…';
     }, [session.state]);
 
+    // Phase 1: the congress status line is the voiced THOUGHT-LINE (the warmth
+    // lever) — what the lane is doing now, honest-stale when not liveness-fresh.
+    const congressThought = congressSeat ? voiceThought(congressSeat) : null;
+    const pressure = congressSeat ? contextPressure(congressSeat) : null;
     const statusText = congressSeat
-        // The trustworthy verdict, shown as the status line (oracle data, warm-cased).
-        ? congressSeat.verdict.trim().toLowerCase()
+        ? congressThought!.text
         : session.hasUnread
         ? t('status.unread')
         : session.state === 'thinking'
@@ -550,7 +650,10 @@ const SessionItem = React.memo(({ session, congressSeat, selected, isFirst, isLa
             {...menuProps}
         >
             <View style={styles.avatarContainer}>
-                <Avatar id={session.avatarId} size={48} monochrome={!status.isConnected} flavor={session.flavor} />
+                {/* Phase 1: congress rows key the avatar by the stable SEAT name, not
+                    the session id — so a lane keeps the same face across re-registers
+                    (new session ids), per loom's "stable one-face-per-lane". */}
+                <Avatar id={congressSeat ? congressSeat.seat : session.avatarId} size={48} monochrome={!status.isConnected} flavor={session.flavor} />
                 {session.hasDraft && (
                     <View style={styles.draftIconContainer}>
                         <Ionicons
@@ -593,12 +696,33 @@ const SessionItem = React.memo(({ session, congressSeat, selected, isFirst, isLa
                     <View style={styles.statusDotContainer}>
                         <StatusDot color={status.dotColor} isPulsing={status.isPulsing} />
                     </View>
+                    {/* Phase 1: directional Bottleneck light — a glyph whose SHAPE
+                        carries direction (down = blocked-downstream / up = starved-
+                        upstream), so it never double-reads against the health color.
+                        Dark-safe + fail-closed: only when bottleneck is present and
+                        not 'working'. */}
+                    {congressSeat?.bottleneck && congressSeat.bottleneck.direction !== 'working' ? (
+                        <Ionicons
+                            name={congressSeat.bottleneck.direction === 'blocked-downstream' ? 'arrow-down' : 'arrow-up'}
+                            size={12}
+                            color={status.color}
+                            style={styles.bottleneckGlyph}
+                        />
+                    ) : null}
                     <Text style={[
                         styles.statusText,
                         { color: status.color }
                     ]}>
                         {statusText}
                     </Text>
+                    {/* OVERSEE context-pressure cue: % toward the 750K auto-compact
+                        fire (the first MONITOR signal on the tile). Right-aligned,
+                        muted until the pressure earns amber/red. */}
+                    {pressure ? (
+                        <Text style={[styles.contextPct, { color: pressure.color }]}>
+                            {pressure.label}
+                        </Text>
+                    ) : null}
                 </View>
             </View>
         </Pressable>

@@ -28,42 +28,73 @@ import { CongressSeat } from '@/sync/congressTypes';
 export interface CongressRoster {
     sessions: Map<string, CongressSeat>;
     workers: CongressSeat[];
+    // LOUD-guard (loom's keystone lesson): the feed-reader must distinguish three
+    // states and NEVER collapse a broken feed into a silent-empty (which looks
+    // identical to a genuinely quiet feed — that masking is exactly why the roster
+    // GET was dark for so long). `unreachable` = persistent stale/failed reads with
+    // nothing to show -> the render must say so LOUDLY, not render blank.
+    unreachable: boolean;
 }
 
-const EMPTY_ROSTER: CongressRoster = { sessions: new Map(), workers: [] };
+const EMPTY_ROSTER: CongressRoster = { sessions: new Map(), workers: [], unreachable: false };
 
 const POLL_INTERVAL_MS = 5000;
+// Go loud only after a few consecutive failures so a single mid-write blip doesn't
+// flash an alarm — but a real outage surfaces within ~15s instead of staying dark.
+const UNREACHABLE_AFTER = 3;
 
 export function useCongressRoster(): CongressRoster {
     const [roster, setRoster] = React.useState<CongressRoster>(EMPTY_ROSTER);
+    const failures = React.useRef(0);
 
     React.useEffect(() => {
         let mounted = true;
         let timer: ReturnType<typeof setTimeout> | null = null;
+
+        // A failed/stale read keeps last-good data, but if we've never had data and
+        // keep failing, flip `unreachable` LOUD (state 3) — distinct from a fresh
+        // empty roster (state 2: stale=false + zero seats = a true "nobody home").
+        const markFailure = () => {
+            failures.current += 1;
+            if (mounted) {
+                setRoster((prev) => {
+                    const loud = failures.current >= UNREACHABLE_AFTER
+                        && prev.sessions.size === 0 && prev.workers.length === 0;
+                    return prev.unreachable === loud ? prev : { ...prev, unreachable: loud };
+                });
+            }
+        };
 
         const poll = async () => {
             try {
                 const credentials = await TokenStorage.getCredentials();
                 if (mounted && credentials) {
                     const response = await getCongressRoster(credentials);
-                    // Keep last-good on a stale/failed read; adopt fresh results
-                    // (including a fresh empty roster — a true "nobody home").
                     if (mounted && !response.stale) {
+                        // State 1/2: a good read (data or a genuine empty). Adopt + clear loud.
+                        failures.current = 0;
                         const sessions = new Map<string, CongressSeat>();
                         const workers: CongressSeat[] = [];
                         for (const seat of response.seats) {
-                            if (seat.kind === 'worker' || seat.cuid == null) {
+                            if (seat.kind === 'worker' || (seat.cuid == null && seat.claudeSid == null)) {
                                 workers.push(seat);
                             } else {
-                                // cuid is non-null here → safe O(1) JOIN key.
-                                sessions.set(seat.cuid, seat);
+                                // DUAL-KEY the JOIN: claudeSid (stable, daemon-independent —
+                                // primary) AND cuid (fallback). A row matches on either key,
+                                // so the Hearthside join survives daemon-restart cuid churn.
+                                if (seat.claudeSid) sessions.set(seat.claudeSid, seat);
+                                if (seat.cuid) sessions.set(seat.cuid, seat);
                             }
                         }
-                        setRoster({ sessions, workers });
+                        setRoster({ sessions, workers, unreachable: false });
+                    } else if (mounted) {
+                        // State 3: stale read (server couldn't read/parse the feed).
+                        markFailure();
                     }
                 }
             } catch {
-                // Defensive: never surface a polling error; just retry next tick.
+                // Transport failure — also state 3 (couldn't reach the feed).
+                markFailure();
             } finally {
                 if (mounted) {
                     timer = setTimeout(poll, POLL_INTERVAL_MS);

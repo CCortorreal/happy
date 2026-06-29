@@ -6,6 +6,7 @@ import { Fastify } from "./types";
 import { authRoutes } from "./routes/authRoutes";
 import { congressRoutes } from "./routes/congressRoutes";
 import { wardenRoutes } from "./routes/wardenRoutes";
+import { vramRoutes } from "./routes/vramRoutes";
 import { pushRoutes } from "./routes/pushRoutes";
 import { sessionRoutes } from "./routes/sessionRoutes";
 import { connectRoutes } from "./routes/connectRoutes";
@@ -116,6 +117,7 @@ export async function startApi(opts: StartApiOptions = {}) {
     attachmentRoutes(typed);
     congressRoutes(typed);
     wardenRoutes(typed);
+    vramRoutes(typed);
 
     // Static webapp (self-host mode)
     if (opts.staticDir) {
