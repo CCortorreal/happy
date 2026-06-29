@@ -9,6 +9,7 @@ import { useWarden } from '@/hooks/useWarden';
 import { WardenItem } from '@/sync/wardenTypes';
 import { answerWarden } from '@/sync/apiWarden';
 import { TokenStorage } from '@/auth/tokenStorage';
+import { useAuth } from '@/auth/AuthContext';
 import { FeedUnreachable } from '@/components/HonestSignal';
 import { t } from '@/text';
 
@@ -64,11 +65,12 @@ function summarize(q: string): { headline: string; summary: string | null; body:
     return { headline, summary, body, hasMore };
 }
 
-function KnockCard({ item, optimisticAnswer, errored, onAnswer }: {
+function KnockCard({ item, optimisticAnswer, errored, onAnswer, onReauth }: {
     item: WardenItem;
     optimisticAnswer?: string;
     errored?: 'auth' | 'send';
     onAnswer: (id: string, text: string) => void;
+    onReauth: () => void;
 }) {
     const { theme } = useUnistyles();
     const effectiveAnswer = item.a ?? optimisticAnswer ?? null;
@@ -235,10 +237,14 @@ function KnockCard({ item, optimisticAnswer, errored, onAnswer }: {
                         </View>
                     ) : null}
 
-                    {errored ? (
-                        <Text style={styles.errorLine}>
-                            {errored === 'auth' ? t('warden.sessionExpired') : t('warden.sendFailed')}
-                        </Text>
+                    {errored === 'auth' ? (
+                        // A dead token can't be retried — only re-paired. One tap routes
+                        // straight to sign-in (logout clears the dead creds + reloads to login).
+                        <Pressable onPress={onReauth} hitSlop={6}>
+                            <Text style={styles.reauthLink}>{t('warden.sessionExpired')}</Text>
+                        </Pressable>
+                    ) : errored ? (
+                        <Text style={styles.errorLine}>{t('warden.sendFailed')}</Text>
                     ) : null}
                 </View>
             )}
@@ -278,6 +284,7 @@ function groupByRef(open: WardenItem[]): OpenGroup[] {
 
 export function WardenKnocks() {
     const { items, unreachable } = useWarden();
+    const { logout } = useAuth();   // one-tap re-auth on a dead-token card (clears creds + reloads to login)
     // Optimistic answers (id -> text) shown immediately; reconciled by the next poll
     // once the server's write lands. Cleared if the POST fails (with a retry hint).
     const [overlay, setOverlay] = React.useState<Record<string, string>>({});
@@ -334,6 +341,7 @@ export function WardenKnocks() {
             optimisticAnswer={overlay[item.id]}
             errored={errors[item.id]}
             onAnswer={onAnswer}
+            onReauth={logout}
         />
     );
 
@@ -599,6 +607,15 @@ const styles = StyleSheet.create((theme) => ({
         color: '#E5484D',
         marginTop: 6,
         ...Typography.default(),
+    },
+    // One-tap re-auth affordance — reads as an actionable link (underlined, accent),
+    // not a passive error line, so the dead-token recovery is a single tap.
+    reauthLink: {
+        fontSize: 12,
+        color: '#E5484D',
+        marginTop: 6,
+        textDecorationLine: 'underline',
+        ...Typography.default('semiBold'),
     },
     reference: {
         fontSize: 11,
