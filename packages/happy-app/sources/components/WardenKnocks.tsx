@@ -251,7 +251,7 @@ function groupByRef(open: WardenItem[]): OpenGroup[] {
 }
 
 export function WardenKnocks() {
-    const items = useWarden();
+    const { items, unreachable } = useWarden();
     // Optimistic answers (id -> text) shown immediately; reconciled by the next poll
     // once the server's write lands. Cleared if the POST fails (with a retry hint).
     const [overlay, setOverlay] = React.useState<Record<string, string>>({});
@@ -281,8 +281,22 @@ export function WardenKnocks() {
     const answered = items.filter(isAnswered);
 
     // The absence of a knock IS the all-clear — render nothing when there's no
-    // history and nothing open.
+    // history and nothing open. BUT only if the feed is actually reachable: a
+    // persistently-dead feed with nothing to show reads LOUD (loom's three-state
+    // discipline), never a silent "all clear" — this is an action surface, so a
+    // broken feed Carlos can't see is the worst failure mode.
     if (open.length === 0 && answered.length === 0) {
+        if (unreachable) {
+            return (
+                <View style={styles.wrapper}>
+                    <View style={styles.container}>
+                        <Text style={styles.feedUnreachable} numberOfLines={2}>
+                            {t('warden.feedUnreachable')}
+                        </Text>
+                    </View>
+                </View>
+            );
+        }
         return null;
     }
 
@@ -355,6 +369,14 @@ const styles = StyleSheet.create((theme) => ({
         textTransform: 'uppercase',
         letterSpacing: 0.5,
         marginBottom: 8,
+        marginLeft: 4,
+        ...Typography.default('semiBold'),
+    },
+    // LOUD-guard banner — same red as the gauge's unreachable state; a dead feed
+    // looks dead (#170), never a calm "all clear".
+    feedUnreachable: {
+        fontSize: 12,
+        color: '#E5484D',
         marginLeft: 4,
         ...Typography.default('semiBold'),
     },

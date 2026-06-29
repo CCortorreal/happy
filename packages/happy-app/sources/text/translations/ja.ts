@@ -514,6 +514,7 @@ export const ja: TranslationStructure = {
         sendFailed: '送信できませんでした — 再試行',
         acknowledged: ({ to }: { to: string }) => `了解 — ${to} に送信しました`,
         recommends: ({ name, choice }: { name: string; choice: string }) => `${name} は ${choice} を推しています`,
+        feedUnreachable: 'Warden に接続できません — 返信は送信されません',
     },
 
     worker: {

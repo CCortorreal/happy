@@ -529,6 +529,7 @@ export const pl: TranslationStructure = {
         sendFailed: 'Nie udało się wysłać — ponów',
         acknowledged: ({ to }: { to: string }) => `Gotowe — wysłano do ${to}`,
         recommends: ({ name, choice }: { name: string; choice: string }) => `${name} skłania się ku ${choice}`,
+        feedUnreachable: 'nie można połączyć się z Wardenem — odpowiedzi nie zostaną wysłane',
     },
 
     worker: {

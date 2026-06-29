@@ -529,6 +529,7 @@ export const ru: TranslationStructure = {
         sendFailed: 'Не удалось отправить — повторить',
         acknowledged: ({ to }: { to: string }) => `Готово — отправлено ${to}`,
         recommends: ({ name, choice }: { name: string; choice: string }) => `${name} склоняется к ${choice}`,
+        feedUnreachable: 'нет связи с Warden — ответы не отправятся',
     },
 
     worker: {

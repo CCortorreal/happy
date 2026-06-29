@@ -512,6 +512,7 @@ export const pt: TranslationStructure = {
         sendFailed: 'Falha ao enviar — tentar de novo',
         acknowledged: ({ to }: { to: string }) => `Pronto — enviado para ${to}`,
         recommends: ({ name, choice }: { name: string; choice: string }) => `${name} prefere ${choice}`,
+        feedUnreachable: 'não foi possível alcançar o Warden — as respostas não serão enviadas',
     },
 
     worker: {

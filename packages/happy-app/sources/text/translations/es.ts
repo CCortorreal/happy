@@ -513,6 +513,7 @@ export const es: TranslationStructure = {
         sendFailed: 'No se pudo enviar — reintentar',
         acknowledged: ({ to }: { to: string }) => `Listo — enviado a ${to}`,
         recommends: ({ name, choice }: { name: string; choice: string }) => `${name} se inclina por ${choice}`,
+        feedUnreachable: 'no se puede contactar al Warden — las respuestas no se enviarán',
     },
 
     worker: {

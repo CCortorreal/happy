@@ -534,6 +534,11 @@ export const en = {
         // the signature for now so the 9 translated locales remain type-valid until
         // i18n-translator rewrites them to the choice-less phrasing (then drop it).
         recommends: ({ name, choice }: { name: string; choice: string }) => `${name} leans this way`,
+        // LOUD-guard banner (loom's three-state discipline): shown ONLY when the feed
+        // is persistently unreachable AND there's nothing to show — so a dead feed never
+        // masquerades as "all clear". Says the feed is down AND that answers won't send
+        // (it's an action surface). Wording is loom's to villager-ize in the i18n pass.
+        feedUnreachable: "can’t reach the Warden — answers won’t send",
     },
 
     worker: {

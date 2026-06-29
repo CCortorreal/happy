@@ -511,6 +511,7 @@ export const it: TranslationStructure = {
         sendFailed: 'Invio non riuscito — riprova',
         acknowledged: ({ to }: { to: string }) => `Fatto — inviato a ${to}`,
         recommends: ({ name, choice }: { name: string; choice: string }) => `${name} propende per ${choice}`,
+        feedUnreachable: 'impossibile raggiungere il Warden — le risposte non verranno inviate',
     },
 
     worker: {

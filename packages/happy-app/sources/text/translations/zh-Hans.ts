@@ -514,6 +514,7 @@ export const zhHans: TranslationStructure = {
         sendFailed: '发送失败 — 重试',
         acknowledged: ({ to }: { to: string }) => `已收到 — 已发送给 ${to}`,
         recommends: ({ name, choice }: { name: string; choice: string }) => `${name} 倾向于 ${choice}`,
+        feedUnreachable: '无法连接 Warden — 回复将无法发送',
     },
 
     worker: {

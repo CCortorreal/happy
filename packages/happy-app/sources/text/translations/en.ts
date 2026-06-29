@@ -529,6 +529,7 @@ export const en: TranslationStructure = {
         sendFailed: "Couldn't send — retry",
         acknowledged: ({ to }: { to: string }) => `Got it — sent to ${to}`,
         recommends: ({ name, choice }: { name: string; choice: string }) => `${name} leans ${choice}`,
+        feedUnreachable: "can’t reach the Warden — answers won’t send",
     },
 
     worker: {
