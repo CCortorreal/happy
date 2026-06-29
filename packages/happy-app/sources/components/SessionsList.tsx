@@ -233,16 +233,17 @@ const stylesheet = StyleSheet.create((theme) => ({
 // of BOTH key spaces (see useCongressRoster's dual-key map).
 function buildHearthsideViewData(
     data: SessionListViewItem[],
-    congressIds: Set<string>,
+    roster: Map<string, CongressSeat>,
     workers: CongressSeat[],
 ): SessionListViewItem[] {
-    if (congressIds.size === 0 && workers.length === 0) {
+    if (roster.size === 0 && workers.length === 0) {
         return data;
     }
 
     // A row is a congress lane if EITHER key hits: claudeSid (primary) or cuid.
-    const isCongress = (s: SessionRowData) =>
-        (s.claudeSessionId != null && congressIds.has(s.claudeSessionId)) || congressIds.has(s.id);
+    const seatFor = (s: SessionRowData): CongressSeat | undefined =>
+        (s.claudeSessionId != null ? roster.get(s.claudeSessionId) : undefined) ?? roster.get(s.id);
+    const isCongress = (s: SessionRowData) => seatFor(s) != null;
 
     const congressRows: SessionListViewItem[] = [];
     const rest: SessionListViewItem[] = [];
@@ -272,6 +273,22 @@ function buildHearthsideViewData(
         }
         rest.push(item);
     }
+
+    // #1 INTELLIGENT ORDERING (Carlos: "surface active/unhealthy/needs-you first, not
+    // raw chronological cruft"). Sort the Hearthside lanes by health TIER — dead-incident
+    // (red) → needs-attention (amber) → alive-healthy (green) → daemon-lost/idle-cold
+    // (grey). Reuses congressHealthStatus so the order AGREES with the tile colors Carlos
+    // sees (the red ones float up). Stable + calm, not jumpy: it keys off the slow-moving
+    // health tier (verdict ALIVE vs cold already sorts active above idle), and Array.sort
+    // is stable so ties keep arrival order.
+    const rank = (item: SessionListViewItem): number => {
+        if (item.type !== 'session') return 9;
+        const seat = seatFor(item.session);
+        if (!seat) return 8;
+        const { color } = congressHealthStatus(seat);
+        return color === HEALTH_RED ? 0 : color === HEALTH_AMBER ? 1 : color === HEALTH_GREEN ? 2 : 3;
+    };
+    congressRows.sort((a, b) => rank(a) - rank(b));
 
     // Worker rows (cuid:null) don't JOIN — they render as their own cards.
     const workerItems: SessionListViewItem[] = workers.map((w) => ({ type: 'congress-worker', worker: w }));
@@ -331,7 +348,7 @@ export function SessionsList({ previewData, previewRoster, previewWorkers }: Ses
         if (!data) {
             return data;
         }
-        return buildHearthsideViewData(data, new Set(roster.keys()), workers);
+        return buildHearthsideViewData(data, roster, workers);
     }, [data, roster, workers]);
     const pathname = usePathname();
     const isTablet = useIsTablet();
