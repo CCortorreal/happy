@@ -507,6 +507,12 @@ export const zhHant: TranslationStructure = {
         answered: '已回覆',
         reference: '參考',
         from: ({ name }: { name: string }) => `來自 ${name}`,
+        affirm: '好，繼續',
+        decline: '暫不',
+        replyPlaceholder: '回覆…',
+        sendFailed: '傳送失敗 — 重試',
+        acknowledged: ({ to }: { to: string }) => `已收到 — 已傳送給 ${to}`,
+        recommends: ({ name, choice }: { name: string; choice: string }) => `${name} 傾向於 ${choice}`,
     },
 
     worker: {

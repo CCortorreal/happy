@@ -523,6 +523,12 @@ export const ru: TranslationStructure = {
         answered: 'Отвечено',
         reference: 'Ссылка',
         from: ({ name }: { name: string }) => `от ${name}`,
+        affirm: 'Да, вперёд',
+        decline: 'Не сейчас',
+        replyPlaceholder: 'Ответить…',
+        sendFailed: 'Не удалось отправить — повторить',
+        acknowledged: ({ to }: { to: string }) => `Готово — отправлено ${to}`,
+        recommends: ({ name, choice }: { name: string; choice: string }) => `${name} склоняется к ${choice}`,
     },
 
     worker: {

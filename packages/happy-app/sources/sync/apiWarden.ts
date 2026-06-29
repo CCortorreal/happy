@@ -43,3 +43,35 @@ export async function getWarden(
         return parsed.data;
     });
 }
+
+/**
+ * Answer a knock-card (Hearth Slice A — the first write).
+ *
+ * The client never writes the queue; it POSTs here and the server routes the
+ * answer through the for-carlos.mjs verb (write + channel route-back to the lane).
+ * Returns true on success (including a benign already-answered double-submit),
+ * false on failure so the caller can surface a quiet "couldn't send — retry"
+ * without losing the draft. No backoff: a failed answer should report quickly,
+ * not silently retry behind the user.
+ */
+export async function answerWarden(
+    credentials: AuthCredentials,
+    id: string,
+    answer: string
+): Promise<boolean> {
+    const API_ENDPOINT = getServerUrl();
+    try {
+        const response = await fetch(`${API_ENDPOINT}/v1/warden/answer`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${credentials.token}`,
+                'Content-Type': 'application/json',
+                'X-Happy-Client': getHappyClientId(),
+            },
+            body: JSON.stringify({ id, answer }),
+        });
+        return response.ok;
+    } catch {
+        return false;
+    }
+}

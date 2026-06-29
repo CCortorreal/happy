@@ -508,6 +508,12 @@ export const zhHans: TranslationStructure = {
         answered: '已回复',
         reference: '参考',
         from: ({ name }: { name: string }) => `来自 ${name}`,
+        affirm: '好，继续',
+        decline: '暂不',
+        replyPlaceholder: '回复…',
+        sendFailed: '发送失败 — 重试',
+        acknowledged: ({ to }: { to: string }) => `已收到 — 已发送给 ${to}`,
+        recommends: ({ name, choice }: { name: string; choice: string }) => `${name} 倾向于 ${choice}`,
     },
 
     worker: {

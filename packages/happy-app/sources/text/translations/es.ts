@@ -507,6 +507,12 @@ export const es: TranslationStructure = {
         answered: 'Respondido',
         reference: 'Referencia',
         from: ({ name }: { name: string }) => `de ${name}`,
+        affirm: 'Sí, adelante',
+        decline: 'Ahora no',
+        replyPlaceholder: 'Responde…',
+        sendFailed: 'No se pudo enviar — reintentar',
+        acknowledged: ({ to }: { to: string }) => `Listo — enviado a ${to}`,
+        recommends: ({ name, choice }: { name: string; choice: string }) => `${name} se inclina por ${choice}`,
     },
 
     worker: {

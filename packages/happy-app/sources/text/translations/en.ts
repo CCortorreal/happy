@@ -523,6 +523,12 @@ export const en: TranslationStructure = {
         answered: 'Answered',
         reference: 'Reference',
         from: ({ name }: { name: string }) => `from ${name}`,
+        affirm: 'Yes, go ahead',
+        decline: 'Not now',
+        replyPlaceholder: 'Write back…',
+        sendFailed: "Couldn't send — retry",
+        acknowledged: ({ to }: { to: string }) => `Got it — sent to ${to}`,
+        recommends: ({ name, choice }: { name: string; choice: string }) => `${name} leans ${choice}`,
     },
 
     worker: {

@@ -505,6 +505,12 @@ export const it: TranslationStructure = {
         answered: 'Risposto',
         reference: 'Riferimento',
         from: ({ name }: { name: string }) => `da ${name}`,
+        affirm: 'Sì, procedi',
+        decline: 'Non ora',
+        replyPlaceholder: 'Rispondi…',
+        sendFailed: 'Invio non riuscito — riprova',
+        acknowledged: ({ to }: { to: string }) => `Fatto — inviato a ${to}`,
+        recommends: ({ name, choice }: { name: string; choice: string }) => `${name} propende per ${choice}`,
     },
 
     worker: {

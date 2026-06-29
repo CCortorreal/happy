@@ -2,6 +2,10 @@ import { z } from "zod";
 import { Fastify } from "../types";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
 
 // Warden route (Hearth — P1 RELATE layer, the knock-cards).
 //
@@ -20,6 +24,14 @@ import { join } from "node:path";
 // One for-carlos item. Every field but id/from/q is optional at the read
 // boundary — the file is script-written and re-read on a timer, so we normalize
 // defensively and keep last good on failure.
+// Optional structured choices on a gate ask (loom's tap-a-choice). Additive: a
+// lane (reaper's A/B first) populates it; absent -> client degrades to quick-reply.
+const WardenChoiceSchema = z.object({
+    key: z.string(),
+    label: z.string(),
+    recommended: z.boolean().nullish(),
+});
+
 const WardenItemSchema = z.object({
     id: z.string(),
     from: z.string(),
@@ -28,6 +40,7 @@ const WardenItemSchema = z.object({
     kind: z.string().nullish(),         // 'gate' (blocks) | 'routine' (optional)
     ctx: z.string().nullish(),          // the why / cascade
     ref: z.string().nullish(),          // quiet handle to the underlying thing
+    choices: z.array(WardenChoiceSchema).nullish(),
     a: z.string().nullish(),            // the answer, once given
     answered_ts: z.string().nullish(),
 });
@@ -39,6 +52,19 @@ const ForCarlosFileSchema = z.object({
 function forCarlosPath(): string {
     const home = process.env.USERPROFILE || process.env.HOME || '';
     return join(home, '.happy-selfhost', 'for-carlos.json');
+}
+
+// The for-carlos.mjs organ is the SOLE writer of the queue (infra-confirmed). The
+// server NEVER writes for-carlos.json directly — it routes the answer through the
+// verb, which does read-modify-write + the channel route-back to the asking lane +
+// the already-answered idempotency guard. Path is env-configurable for portability;
+// the default matches the self-host box layout.
+function forCarlosBin(): string {
+    if (process.env.FOR_CARLOS_BIN) {
+        return process.env.FOR_CARLOS_BIN;
+    }
+    const home = process.env.USERPROFILE || process.env.HOME || '';
+    return join(home, 'Desktop', 'projects', '.claude', 'tools', 'congress-console', 'for-carlos.mjs');
 }
 
 // Read + normalize the for-carlos queue. Defensive: absent / mid-write /
@@ -85,6 +111,11 @@ export function wardenRoutes(app: Fastify) {
                         kind: z.string().nullable(),
                         ctx: z.string().nullable(),
                         ref: z.string().nullable(),
+                        choices: z.array(z.object({
+                            key: z.string(),
+                            label: z.string(),
+                            recommended: z.boolean().nullable(),
+                        })).nullable(),
                         a: z.string().nullable(),
                         answered_ts: z.string().nullable(),
                     })),
@@ -104,9 +135,56 @@ export function wardenRoutes(app: Fastify) {
                 kind: i.kind ?? null,
                 ctx: i.ctx ?? null,
                 ref: i.ref ?? null,
+                choices: i.choices?.map((c) => ({
+                    key: c.key,
+                    label: c.label,
+                    recommended: c.recommended ?? null,
+                })) ?? null,
                 a: i.a ?? null,
                 answered_ts: i.answered_ts ?? null,
             })),
         });
+    });
+
+    // POST /v1/warden/answer — record Carlos's reply to a knock (the Hearth's first
+    // WRITE). The client never touches the file; it routes here, and the server
+    // shells the for-carlos.mjs answer verb (the sole writer). execFile with an arg
+    // ARRAY — never a shell string — so the free-text answer can't inject a command.
+    app.post('/v1/warden/answer', {
+        schema: {
+            body: z.object({
+                id: z.string().min(1),
+                answer: z.string().min(1).max(4000),
+            }),
+            response: {
+                200: z.object({
+                    ok: z.boolean(),
+                    alreadyAnswered: z.boolean(),
+                }),
+                500: z.object({
+                    ok: z.boolean(),
+                    alreadyAnswered: z.boolean(),
+                })
+            }
+        },
+        preHandler: app.authenticate
+    }, async (request, reply) => {
+        const { id, answer } = request.body;
+        try {
+            await execFileAsync('node', [forCarlosBin(), 'answer', id, answer], {
+                timeout: 10000,
+                env: { ...process.env, PEER_SEAT: 'carlos' },
+            });
+            return reply.send({ ok: true, alreadyAnswered: false });
+        } catch (e: any) {
+            // The verb exits non-zero when the item is already answered — that's a
+            // benign double-submit (idempotent), not an error. Everything else is a
+            // genuine failure the client should surface as "couldn't send — retry".
+            const out = `${e?.stderr ?? ''}${e?.stdout ?? ''}${e?.message ?? ''}`;
+            if (/already answered/i.test(out)) {
+                return reply.send({ ok: true, alreadyAnswered: true });
+            }
+            return reply.code(500).send({ ok: false, alreadyAnswered: false });
+        }
     });
 }

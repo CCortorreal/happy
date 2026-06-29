@@ -508,6 +508,12 @@ export const ja: TranslationStructure = {
         answered: '回答済み',
         reference: '参照',
         from: ({ name }: { name: string }) => `${name} より`,
+        affirm: 'はい、進めて',
+        decline: '今はやめておく',
+        replyPlaceholder: '返信する…',
+        sendFailed: '送信できませんでした — 再試行',
+        acknowledged: ({ to }: { to: string }) => `了解 — ${to} に送信しました`,
+        recommends: ({ name, choice }: { name: string; choice: string }) => `${name} は ${choice} を推しています`,
     },
 
     worker: {

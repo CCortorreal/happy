@@ -523,6 +523,12 @@ export const pl: TranslationStructure = {
         answered: 'Odpowiedziano',
         reference: 'Odnośnik',
         from: ({ name }: { name: string }) => `od ${name}`,
+        affirm: 'Tak, śmiało',
+        decline: 'Nie teraz',
+        replyPlaceholder: 'Odpisz…',
+        sendFailed: 'Nie udało się wysłać — ponów',
+        acknowledged: ({ to }: { to: string }) => `Gotowe — wysłano do ${to}`,
+        recommends: ({ name, choice }: { name: string; choice: string }) => `${name} skłania się ku ${choice}`,
     },
 
     worker: {
