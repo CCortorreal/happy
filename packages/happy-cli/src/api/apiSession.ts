@@ -440,7 +440,15 @@ export class ApiSessionClient extends EventEmitter {
         const headers: Record<string, string> = {
             'Content-Type': 'application/octet-stream',
         };
-        if (upload.uploadUrl.startsWith(configuration.serverUrl)) {
+        // Symmetric with downloadAttachment (fixed 2026-06-29): detect a presigned URL
+        // POSITIVELY by its X-Amz-* signature, NOT by a serverUrl prefix match. The
+        // server's PUBLIC_URL (e.g. a Tailscale IP so the phone can reach the self-host)
+        // legitimately differs from the CLI's serverUrl (localhost), so a prefix check
+        // sees the hosts differ, assumes S3, and DROPS the Bearer on a still-auth-required
+        // local PUT -> 401 -> the attachment upload silently fails. Presigned PUTs carry
+        // their auth in the query and reject extra headers; local PUTs require the Bearer.
+        const isPresigned = /[?&]X-Amz-(Signature|Algorithm|Credential)=/i.test(upload.uploadUrl);
+        if (!isPresigned) {
             headers.Authorization = `Bearer ${this.token}`;
         }
 
