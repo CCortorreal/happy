@@ -490,9 +490,18 @@ export class ApiSessionClient extends EventEmitter {
             throw new Error('request-download returned no downloadUrl');
         }
 
-        const isServerUrl = downloadUrl.startsWith(configuration.serverUrl);
+        // S3 presigned GET URLs carry their auth in X-Amz-* query params and REJECT
+        // extra Authorization headers; local-mode URLs point back at our own server
+        // and REQUIRE the Bearer. Detect the mode by the presigned signature, NOT by a
+        // serverUrl prefix match: the server's PUBLIC_URL (e.g. a Tailscale IP like
+        // http://100.64.0.2:3005, needed so the phone can reach the self-host) legitimately
+        // differs from the CLI's serverUrl (e.g. http://localhost:3005). A prefix check
+        // then sees the host strings differ, assumes S3, and silently DROPS the Bearer on a
+        // still-auth-required local URL -> 401, so attachments never reach the model. The
+        // presigned-signature test is host-representation-agnostic. (Fixed 2026-06-29.)
+        const isPresigned = /[?&]X-Amz-(Signature|Algorithm|Credential)=/i.test(downloadUrl);
         const headers: Record<string, string> = {};
-        if (isServerUrl) {
+        if (!isPresigned) {
             headers['Authorization'] = `Bearer ${this.token}`;
         }
         const response = await axios.get(downloadUrl, {
