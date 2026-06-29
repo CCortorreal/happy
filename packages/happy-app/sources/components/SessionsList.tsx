@@ -25,6 +25,7 @@ import { CongressSeat } from '@/sync/congressTypes';
 import { WardenKnocks } from './WardenKnocks';
 import { FeedUnreachable } from '@/components/HonestSignal';
 import { VramGauge } from './VramGauge';
+import { DiskGauge } from './DiskGauge';
 import { WorkerCard } from './WorkerCard';
 import { t } from '@/text';
 
@@ -450,8 +451,9 @@ export function SessionsList({ previewData, previewRoster, previewWorkers }: Ses
             <>
                 {/* The Warden's notes on the mantel — renders nothing when empty. */}
                 <WardenKnocks />
-                {/* MONITOR pillar: the VRAM gauge (loom owns final placement/feel). */}
+                {/* MONITOR pillar: the resilience gauges (loom owns final placement/feel). */}
                 <VramGauge />
+                <DiskGauge />
                 <UpdateBanner />
             </>
         );

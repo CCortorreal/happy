@@ -7,6 +7,7 @@ import { authRoutes } from "./routes/authRoutes";
 import { congressRoutes } from "./routes/congressRoutes";
 import { wardenRoutes } from "./routes/wardenRoutes";
 import { vramRoutes } from "./routes/vramRoutes";
+import { diskRoutes } from "./routes/diskRoutes";
 import { pushRoutes } from "./routes/pushRoutes";
 import { sessionRoutes } from "./routes/sessionRoutes";
 import { connectRoutes } from "./routes/connectRoutes";
@@ -118,6 +119,7 @@ export async function startApi(opts: StartApiOptions = {}) {
     congressRoutes(typed);
     wardenRoutes(typed);
     vramRoutes(typed);
+    diskRoutes(typed);
 
     // Static webapp (self-host mode)
     if (opts.staticDir) {
