@@ -510,6 +510,7 @@ export const pt: TranslationStructure = {
         decline: 'Agora não',
         replyPlaceholder: 'Responder…',
         sendFailed: 'Falha ao enviar — tentar de novo',
+        sessionExpired: 'sessão expirada — entre novamente para enviar',
         acknowledged: ({ to }: { to: string }) => `Pronto — enviado para ${to}`,
         recommends: ({ name, choice }: { name: string; choice: string }) => `${name} prefere ${choice}`,
         feedUnreachable: 'não foi possível alcançar o Warden — as respostas não serão enviadas',

@@ -512,6 +512,7 @@ export const zhHans: TranslationStructure = {
         decline: '暂不',
         replyPlaceholder: '回复…',
         sendFailed: '发送失败 — 重试',
+        sessionExpired: '会话已过期 — 重新登录后发送',
         acknowledged: ({ to }: { to: string }) => `已收到 — 已发送给 ${to}`,
         recommends: ({ name, choice }: { name: string; choice: string }) => `${name} 倾向于 ${choice}`,
         feedUnreachable: '无法连接 Warden — 回复将无法发送',

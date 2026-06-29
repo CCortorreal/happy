@@ -528,6 +528,7 @@ export const en = {
         decline: 'Not now',
         replyPlaceholder: 'write back…',
         sendFailed: "couldn't send — retry",
+        sessionExpired: 'session expired — sign in again to send',
         acknowledged: ({ to }: { to: string }) => `Got it — sent to ${to}`,
         // Chip-adjacent cue: the recommended chip already shows the choice, so we
         // point at it ("leans this way"), not restate the letter. `choice` stays in

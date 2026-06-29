@@ -67,7 +67,7 @@ function summarize(q: string): { headline: string; summary: string | null; body:
 function KnockCard({ item, optimisticAnswer, errored, onAnswer }: {
     item: WardenItem;
     optimisticAnswer?: string;
-    errored?: boolean;
+    errored?: 'auth' | 'send';
     onAnswer: (id: string, text: string) => void;
 }) {
     const { theme } = useUnistyles();
@@ -236,7 +236,9 @@ function KnockCard({ item, optimisticAnswer, errored, onAnswer }: {
                     ) : null}
 
                     {errored ? (
-                        <Text style={styles.errorLine}>{t('warden.sendFailed')}</Text>
+                        <Text style={styles.errorLine}>
+                            {errored === 'auth' ? t('warden.sessionExpired') : t('warden.sendFailed')}
+                        </Text>
                     ) : null}
                 </View>
             )}
@@ -279,24 +281,27 @@ export function WardenKnocks() {
     // Optimistic answers (id -> text) shown immediately; reconciled by the next poll
     // once the server's write lands. Cleared if the POST fails (with a retry hint).
     const [overlay, setOverlay] = React.useState<Record<string, string>>({});
-    const [errors, setErrors] = React.useState<Record<string, boolean>>({});
+    // Error TYPE per card: 'auth' = stale token (re-auth, retrying is futile) vs 'send'
+    // = transport failure (retry can help). Honest-actionable, not just honest.
+    const [errors, setErrors] = React.useState<Record<string, 'auth' | 'send'>>({});
     // Answered history is collapsed by default — the active mantel stays clean.
     const [historyOpen, setHistoryOpen] = React.useState(false);
 
     const onAnswer = React.useCallback(async (id: string, text: string) => {
-        setErrors((e) => ({ ...e, [id]: false }));
+        setErrors((e) => { const n = { ...e }; delete n[id]; return n; });
         setOverlay((o) => ({ ...o, [id]: text }));   // optimistic settle
         const creds = await TokenStorage.getCredentials();
-        const ok = creds ? await answerWarden(creds, id, text) : false;
-        if (!ok) {
-            // Revert the optimistic state, surface a quiet retry; the draft is still
-            // in the card (we never cleared it), so nothing is lost.
+        const res = creds ? await answerWarden(creds, id, text) : { ok: false, authExpired: false };
+        if (!res.ok) {
+            // Revert the optimistic state; the draft is still in the card (we never
+            // cleared it), so nothing is lost. Surface WHY: a dead token wants a re-auth
+            // (retry won't help), a transport blip wants a retry.
             setOverlay((o) => {
                 const next = { ...o };
                 delete next[id];
                 return next;
             });
-            setErrors((e) => ({ ...e, [id]: true }));
+            setErrors((e) => ({ ...e, [id]: res.authExpired ? 'auth' : 'send' }));
         }
     }, []);
 

@@ -512,6 +512,7 @@ export const ja: TranslationStructure = {
         decline: '今はやめておく',
         replyPlaceholder: '返信する…',
         sendFailed: '送信できませんでした — 再試行',
+        sessionExpired: 'セッションが期限切れです — 再ログインして送信',
         acknowledged: ({ to }: { to: string }) => `了解 — ${to} に送信しました`,
         recommends: ({ name, choice }: { name: string; choice: string }) => `${name} は ${choice} を推しています`,
         feedUnreachable: 'Warden に接続できません — 返信は送信されません',

@@ -511,6 +511,7 @@ export const ca: TranslationStructure = {
         decline: 'Ara no',
         replyPlaceholder: 'Respon…',
         sendFailed: "No s'ha pogut enviar — reintenta",
+        sessionExpired: "sessió caducada — torna a iniciar la sessió per enviar",
         acknowledged: ({ to }: { to: string }) => `Fet — enviat a ${to}`,
         recommends: ({ name, choice }: { name: string; choice: string }) => `${name} s'inclina per ${choice}`,
         feedUnreachable: "no es pot contactar amb el Warden — les respostes no s'enviaran",

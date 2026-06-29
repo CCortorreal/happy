@@ -49,16 +49,25 @@ export async function getWarden(
  *
  * The client never writes the queue; it POSTs here and the server routes the
  * answer through the for-carlos.mjs verb (write + channel route-back to the lane).
- * Returns true on success (including a benign already-answered double-submit),
- * false on failure so the caller can surface a quiet "couldn't send — retry"
- * without losing the draft. No backoff: a failed answer should report quickly,
- * not silently retry behind the user.
+ * No backoff: a failed answer should report quickly, not silently retry behind the user.
+ *
+ * The result DISTINGUISHES a stale-token 401 from any other failure. A server bounce
+ * churns the auth tokens (the documented failure mode), leaving the open tab's creds
+ * dead — and there's no refresh path (creds are QR-paired), so RETRYING NEVER HELPS;
+ * only a re-auth does. So `authExpired` lets the card say "session expired — re-auth"
+ * instead of a futile "couldn't send — retry" (the honesty-spine made actionable, not
+ * just honest). The draft is always kept so nothing Carlos typed is lost.
  */
+export interface AnswerResult {
+    ok: boolean;
+    authExpired: boolean;
+}
+
 export async function answerWarden(
     credentials: AuthCredentials,
     id: string,
     answer: string
-): Promise<boolean> {
+): Promise<AnswerResult> {
     const API_ENDPOINT = getServerUrl();
     try {
         const response = await fetch(`${API_ENDPOINT}/v1/warden/answer`, {
@@ -70,8 +79,9 @@ export async function answerWarden(
             },
             body: JSON.stringify({ id, answer }),
         });
-        return response.ok;
+        return { ok: response.ok, authExpired: response.status === 401 };
     } catch {
-        return false;
+        // Transport failure — distinct from a dead token; here a retry CAN help.
+        return { ok: false, authExpired: false };
     }
 }

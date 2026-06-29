@@ -511,6 +511,7 @@ export const zhHant: TranslationStructure = {
         decline: '暫不',
         replyPlaceholder: '回覆…',
         sendFailed: '傳送失敗 — 重試',
+        sessionExpired: '工作階段已過期 — 重新登入後傳送',
         acknowledged: ({ to }: { to: string }) => `已收到 — 已傳送給 ${to}`,
         recommends: ({ name, choice }: { name: string; choice: string }) => `${name} 傾向於 ${choice}`,
         feedUnreachable: '無法連線 Warden — 回覆將無法傳送',

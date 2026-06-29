@@ -527,6 +527,7 @@ export const ru: TranslationStructure = {
         decline: 'Не сейчас',
         replyPlaceholder: 'Ответить…',
         sendFailed: 'Не удалось отправить — повторить',
+        sessionExpired: 'сессия истекла — войдите снова, чтобы отправить',
         acknowledged: ({ to }: { to: string }) => `Готово — отправлено ${to}`,
         recommends: ({ name, choice }: { name: string; choice: string }) => `${name} склоняется к ${choice}`,
         feedUnreachable: 'нет связи с Warden — ответы не отправятся',

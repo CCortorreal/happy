@@ -527,6 +527,7 @@ export const pl: TranslationStructure = {
         decline: 'Nie teraz',
         replyPlaceholder: 'Odpisz…',
         sendFailed: 'Nie udało się wysłać — ponów',
+        sessionExpired: 'sesja wygasła — zaloguj się ponownie, aby wysłać',
         acknowledged: ({ to }: { to: string }) => `Gotowe — wysłano do ${to}`,
         recommends: ({ name, choice }: { name: string; choice: string }) => `${name} skłania się ku ${choice}`,
         feedUnreachable: 'nie można połączyć się z Wardenem — odpowiedzi nie zostaną wysłane',
