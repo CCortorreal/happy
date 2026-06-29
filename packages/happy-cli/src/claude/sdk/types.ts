@@ -45,6 +45,14 @@ export interface QueryOptions {
     /** Path to a settings JSON file to pass to Claude via --settings */
     settingsPath?: string
     /**
+     * When true, forward --chrome to the SDK via the extraArgs seam ({ chrome: null }),
+     * binding the Claude-in-Chrome native-messaging bridge to this REMOTE/SDK seat. The
+     * interactive path (claudeLocal) passes --chrome literally; the SDK path has no raw-arg
+     * passthrough, so without this the flag is silently dropped on remote (app/daemon) seats.
+     * Regressed 2026-06-29 (the forkymaxxing fix was uncommitted and lost on a rebuild) — re-applied + committed.
+     */
+    chrome?: boolean
+    /**
      * Effort level passed straight through to the Claude Agent SDK option
      * of the same name — controls how much thinking/reasoning Claude
      * applies on each turn ('low' | 'medium' | 'high' | 'xhigh' | 'max').

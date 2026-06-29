@@ -47,6 +47,14 @@ export function query(params: { prompt: QueryPrompt; options?: QueryOptions }): 
         effort: opts?.effort,
     }
 
+    // Forward --chrome via the SDK's extraArgs seam ({ chrome: null } -> --chrome). The SDK has
+    // no raw-arg passthrough, so this is the ONLY way the Claude-in-Chrome native-host bridge
+    // attaches to a remote/SDK seat. Interactive seats pass --chrome literally; remote seats need
+    // this. (Regressed 2026-06-29 — re-applied + committed so a rebuild can't silently drop it.)
+    if (opts?.chrome) {
+        sdkOptions.extraArgs = { ...(sdkOptions.extraArgs ?? {}), chrome: null }
+    }
+
     // Map abort signal -> AbortController
     if (opts?.abort) {
         const controller = new AbortController()

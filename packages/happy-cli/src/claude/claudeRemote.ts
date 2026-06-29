@@ -135,6 +135,10 @@ export async function claudeRemote(opts: {
         canCallTool: (toolName: string, input: unknown, options: { signal: AbortSignal; toolUseID: string }) => opts.canCallTool(toolName, input, mode, options),
         abort: opts.signal,
         settingsPath: opts.hookSettingsPath,
+        // index.ts pushes --chrome into claudeArgs when chromeMode is on; the remote/SDK path
+        // must translate that into QueryOptions.chrome -> extraArgs (query.ts) or the
+        // Claude-in-Chrome bridge never attaches to app/daemon seats. (Re-applied 2026-06-29.)
+        chrome: opts.claudeArgs?.includes('--chrome'),
     }
 
     // Track thinking state
