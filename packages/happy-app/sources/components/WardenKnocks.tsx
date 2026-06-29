@@ -9,6 +9,7 @@ import { useWarden } from '@/hooks/useWarden';
 import { WardenItem } from '@/sync/wardenTypes';
 import { answerWarden } from '@/sync/apiWarden';
 import { TokenStorage } from '@/auth/tokenStorage';
+import { FeedUnreachable } from '@/components/HonestSignal';
 import { t } from '@/text';
 
 // WardenKnocks — Hearth P1 RELATE + Slice A (answering) + Tuning Round 1.
@@ -290,9 +291,7 @@ export function WardenKnocks() {
             return (
                 <View style={styles.wrapper}>
                     <View style={styles.container}>
-                        <Text style={styles.feedUnreachable} numberOfLines={2}>
-                            {t('warden.feedUnreachable')}
-                        </Text>
+                        <FeedUnreachable message={t('warden.feedUnreachable')} />
                     </View>
                 </View>
             );
@@ -369,14 +368,6 @@ const styles = StyleSheet.create((theme) => ({
         textTransform: 'uppercase',
         letterSpacing: 0.5,
         marginBottom: 8,
-        marginLeft: 4,
-        ...Typography.default('semiBold'),
-    },
-    // LOUD-guard banner — same red as the gauge's unreachable state; a dead feed
-    // looks dead (#170), never a calm "all clear".
-    feedUnreachable: {
-        fontSize: 12,
-        color: '#E5484D',
         marginLeft: 4,
         ...Typography.default('semiBold'),
     },

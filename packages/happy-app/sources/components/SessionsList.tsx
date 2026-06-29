@@ -23,6 +23,7 @@ import { useSettingMutable } from '@/sync/storage';
 import { useCongressRoster } from '@/hooks/useCongressRoster';
 import { CongressSeat } from '@/sync/congressTypes';
 import { WardenKnocks } from './WardenKnocks';
+import { FeedUnreachable } from '@/components/HonestSignal';
 import { VramGauge } from './VramGauge';
 import { WorkerCard } from './WorkerCard';
 import { t } from '@/text';
@@ -169,12 +170,6 @@ const stylesheet = StyleSheet.create((theme) => ({
         alignSelf: 'center',
         paddingHorizontal: 16,
         paddingVertical: 6,
-    },
-    rosterUnreachableText: {
-        fontSize: 12,
-        color: '#E5484D',
-        letterSpacing: 0.3,
-        ...Typography.default('semiBold'),
     },
     statusText: {
         fontSize: 12,
@@ -469,9 +464,7 @@ export function SessionsList({ previewData, previewRoster, previewWorkers }: Ses
             <View style={styles.contentContainer}>
                 {rosterUnreachable ? (
                     <View style={styles.rosterUnreachable}>
-                        <Text style={styles.rosterUnreachableText} numberOfLines={1}>
-                            can’t reach the congress right now
-                        </Text>
+                        <FeedUnreachable message="can’t reach the congress right now" />
                     </View>
                 ) : null}
                 <FlatList

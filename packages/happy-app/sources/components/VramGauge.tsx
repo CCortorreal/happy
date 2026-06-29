@@ -6,6 +6,7 @@ import { StyleSheet, useUnistyles } from 'react-native-unistyles';
 import { Typography } from '@/constants/Typography';
 import { layout } from './layout';
 import { useVram } from '@/hooks/useVram';
+import { FeedUnreachable } from '@/components/HonestSignal';
 import { gb } from '@/sync/vramTypes';
 
 // VramGauge — Hearth MONITOR pillar (the VRAM-visibility cut Carlos named). Reads
@@ -37,9 +38,11 @@ export function VramGauge() {
     const { view, unreachable } = useVram();
 
     if (unreachable) {
+        // Honest-dead via the shared cross-pillar signal (#0 invariant) — never a
+        // fake-fresh "0GB used". String stays plain pending loom's i18n pass.
         return (
             <View style={styles.container}>
-                <Text style={styles.unreachable} numberOfLines={1}>can’t read the GPU right now</Text>
+                <FeedUnreachable message="can’t read the GPU right now" />
             </View>
         );
     }
@@ -255,10 +258,5 @@ const styles = StyleSheet.create((theme) => ({
         marginTop: 6,
         fontStyle: 'italic',
         ...Typography.default(),
-    },
-    unreachable: {
-        fontSize: 12,
-        color: RED,
-        ...Typography.default('semiBold'),
     },
 }));
