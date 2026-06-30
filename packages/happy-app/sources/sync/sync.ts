@@ -2694,6 +2694,28 @@ class Sync {
             this.activityAccumulator.addUpdate(updateData);
         }
 
+        // Live per-turn usage ticks (context meter). Mirrors processUsageData's
+        // contextSize derivation in reducer.ts: input + cache_creation + cache_read.
+        // Guarded by timestamp so an out-of-order ephemeral can't clobber a newer
+        // message-driven latestUsage (e.g. a context-reset/compaction event).
+        if (updateData.type === 'usage') {
+            const session = storage.getState().sessions[updateData.id];
+            if (session && (!session.latestUsage || updateData.timestamp > session.latestUsage.timestamp)) {
+                const updatedSession: Session = {
+                    ...session,
+                    latestUsage: {
+                        inputTokens: updateData.tokens.input,
+                        outputTokens: updateData.tokens.output,
+                        cacheCreation: updateData.tokens.cache_creation,
+                        cacheRead: updateData.tokens.cache_read,
+                        contextSize: updateData.tokens.input + updateData.tokens.cache_creation + updateData.tokens.cache_read,
+                        timestamp: updateData.timestamp
+                    }
+                };
+                this.applySessions([updatedSession]);
+            }
+        }
+
         // Handle machine activity updates
         if (updateData.type === 'machine-activity') {
             // Update machine's active status and lastActiveAt
