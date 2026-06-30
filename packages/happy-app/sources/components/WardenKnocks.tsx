@@ -298,8 +298,21 @@ function groupByRef(open: WardenItem[]): OpenGroup[] {
     return groups;
 }
 
+// The card-match predicate, exported so the cockpit (SessionsList) can count card
+// matches with the SAME rule — one source of truth, so the search empty-state can
+// never claim 'no matches' while a folded answered card actually matched.
+export function cardMatchesQuery(i: WardenItem, needle: string): boolean {
+    return [i.q, i.from, i.ctx, i.ref].filter(Boolean).join(' ').toLowerCase().includes(needle);
+}
+
+// Thin wrapper: owns the single useWarden poll, delegates to the pure view so the
+// cockpit can lift the same items for a both-planes search count (no double-poll).
 export function WardenKnocks({ query }: { query?: string } = {}) {
     const { items, unreachable } = useWarden();
+    return <WardenKnocksView items={items} unreachable={unreachable} query={query} />;
+}
+
+export function WardenKnocksView({ items, unreachable, query }: { items: WardenItem[]; unreachable: boolean; query?: string }) {
     const { logout } = useAuth();   // one-tap re-auth on a dead-token card (clears creds + reloads to login)
     // Optimistic answers (id -> text) shown immediately; reconciled by the next poll
     // once the server's write lands. Cleared if the POST fails (with a retry hint).
@@ -341,8 +354,7 @@ export function WardenKnocks({ query }: { query?: string } = {}) {
     // Find-as-you-type: when a query is active (threaded from the cockpit search box),
     // a card matches on its plain content — the ask, the sender, the why, the ref.
     const q = query?.trim().toLowerCase();
-    const matchesCard = (i: WardenItem) =>
-        !q || [i.q, i.from, i.ctx, i.ref].filter(Boolean).join(' ').toLowerCase().includes(q);
+    const matchesCard = (i: WardenItem) => !q || cardMatchesQuery(i, q);
     const open = items.filter((i) => !isWithdrawn(i) && !isAnswered(i) && matchesCard(i));
     const answered = items.filter((i) => isAnswered(i) && matchesCard(i));
     const withdrawn = items.filter((i) => isWithdrawn(i) && matchesCard(i));

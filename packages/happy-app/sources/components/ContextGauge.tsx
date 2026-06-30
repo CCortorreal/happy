@@ -134,8 +134,8 @@ export function ContextGauge() {
             {calmCount > 0 ? (
                 <Text style={styles.calm} numberOfLines={1}>
                     {surfaced.length === 0
-                        ? `all ${calmCount} seats calm`
-                        : `+ ${calmCount} seats calm`}
+                        ? (calmCount === 1 ? '1 seat calm' : `all ${calmCount} seats calm`)
+                        : `+ ${calmCount} seat${calmCount === 1 ? '' : 's'} calm`}
                 </Text>
             ) : null}
         </View>

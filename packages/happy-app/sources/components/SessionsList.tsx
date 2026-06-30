@@ -22,7 +22,8 @@ import { useSessionActionAlert } from '@/hooks/useSessionQuickActions';
 import { useSettingMutable } from '@/sync/storage';
 import { useCongressRoster } from '@/hooks/useCongressRoster';
 import { CongressSeat } from '@/sync/congressTypes';
-import { WardenKnocks } from './WardenKnocks';
+import { WardenKnocksView, cardMatchesQuery } from './WardenKnocks';
+import { useWarden } from '@/hooks/useWarden';
 import { FeedUnreachable } from '@/components/HonestSignal';
 import { VramGauge } from './VramGauge';
 import { DiskGauge } from './DiskGauge';
@@ -398,6 +399,13 @@ export function SessionsList({ previewData, previewRoster, previewWorkers }: Ses
         if (!searching || !viewData) return viewData;
         return viewData.filter((item) => viewItemMatchesQuery(item, roster, needle));
     }, [viewData, roster, needle, searching]);
+    // Lift the Warden feed here (single poll, shared with the header view) so the
+    // search empty-state counts BOTH planes — lanes AND cards. Without this the
+    // 'no matches' line would lie when only folded answered cards matched.
+    const warden = useWarden();
+    const cardMatchCount = searching
+        ? warden.items.filter((i) => cardMatchesQuery(i, needle)).length
+        : 0;
     const pathname = usePathname();
     const isTablet = useIsTablet();
     const [hideInactiveSessions, setHideInactiveSessions] = useSettingMutable('hideInactiveSessions');
@@ -516,8 +524,13 @@ export function SessionsList({ previewData, previewRoster, previewWorkers }: Ses
         return (
             <>
                 {/* The Warden's notes on the mantel — renders nothing when empty.
-                    During a search it filters its cards to the same query. */}
-                <WardenKnocks query={searching ? needle : undefined} />
+                    During a search it filters its cards to the same query. Fed the
+                    lifted items so the cockpit's empty-state counts cards too. */}
+                <WardenKnocksView
+                    items={warden.items}
+                    unreachable={warden.unreachable}
+                    query={searching ? needle : undefined}
+                />
                 {/* MONITOR pillar: the resilience gauges (loom owns final placement/feel).
                     Hidden during a search — they're noise when hunting a lane/card. */}
                 {!searching ? (
@@ -530,7 +543,7 @@ export function SessionsList({ previewData, previewRoster, previewWorkers }: Ses
                 ) : null}
             </>
         );
-    }, [searching, needle]);
+    }, [searching, needle, warden.items, warden.unreachable]);
 
     // Footer removed - all sessions now shown inline
 
@@ -562,7 +575,7 @@ export function SessionsList({ previewData, previewRoster, previewWorkers }: Ses
                         <FeedUnreachable message="can’t reach the congress right now" />
                     </View>
                 ) : null}
-                {searching && displayData && displayData.length === 0 ? (
+                {searching && displayData && displayData.length === 0 && cardMatchCount === 0 ? (
                     <Text style={styles.searchEmpty}>{t('sessionsList.searchEmpty', { query: query.trim() })}</Text>
                 ) : null}
                 <FlatList
