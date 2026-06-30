@@ -140,10 +140,15 @@ export default function CockpitV2() {
         });
     }, [items, overlay]);
 
+    // Count GENUINELY-open cards (exclude just-answered optimistic settles) so the
+    // header decrements the instant you answer, while the card itself stays visible
+    // settling in place. needsYou keeps the settling card; openCount drops it.
+    const openCount = needsYou.filter((i) => !overlay[i.id]).length;
+
     return (
         <ScrollView contentContainerStyle={styles.scroll}>
             <View style={styles.container}>
-                <Text style={styles.title}>NEEDS YOU{needsYou.length > 0 ? ` · ${needsYou.length}` : ''}</Text>
+                <Text style={styles.title}>NEEDS YOU{openCount > 0 ? ` · ${openCount}` : ''}</Text>
 
                 {unreachable && needsYou.length === 0 ? (
                     <FeedUnreachable message="can’t reach the Warden — answers won’t send" />
