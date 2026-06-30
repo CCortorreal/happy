@@ -57,7 +57,11 @@ export interface StartOptions {
 }
 
 const DEFAULT_CLAUDE_PERMISSION_MODE: PermissionMode = 'yolo';
-const DEFAULT_CLAUDE_MODEL = 'opus';
+// Burn-fix Layer 3 (deepest failsafe): default to Sonnet so a seat launched with
+// NO --model and NO UI selection stops defaulting to Opus. Alias (matches the prior
+// 'opus' style) → resolves to the latest Sonnet. Explicit --model / UI selector
+// (Layers 1 & 2) still override per seat. Bias cheap; justify Opus per-seat.
+const DEFAULT_CLAUDE_MODEL = 'sonnet';
 const DEFAULT_CLAUDE_EFFORT: 'low' | 'medium' | 'high' | 'xhigh' | 'max' = 'medium';
 type ClaudeGoalCommand = NonNullable<ReturnType<typeof parseClaudeGoalActionParams>>;
 type PendingClaudeGoalAction = {
