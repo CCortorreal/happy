@@ -29,7 +29,12 @@ export type AgentDefaultConfig = {
 const codeAgentDefaults: Record<AgentKey, AgentDefaultConfig> = {
     // The Claude UI key for YOLO is `bypassPermissions`; the CLI also accepts
     // `yolo` and maps it to the Claude SDK's bypass mode.
-    claude: { permissionMode: 'bypassPermissions', modelMode: 'opus', effortLevel: 'medium' },
+    // Burn-fix: the CODE default floors NEW app-created claude sessions at Sonnet
+    // (was 'opus', which sent meta.model='opus' and defeated the CLI Layer-3 flip).
+    // Carlos keeps Opus for hands-on/desk work via the per-agent USER OVERRIDE
+    // (settings.agentDefaultOverrides.claude.modelMode = 'opus'), resolved on top of
+    // this in resolveAgentDefaultConfig — the user override wins for his sessions.
+    claude: { permissionMode: 'bypassPermissions', modelMode: 'sonnet', effortLevel: 'medium' },
     codex: { permissionMode: 'yolo', modelMode: 'gpt-5.5', effortLevel: 'medium' },
     gemini: { permissionMode: 'default', modelMode: 'gemini-2.5-pro', effortLevel: null },
     openclaw: { permissionMode: 'default', modelMode: 'default', effortLevel: null },
