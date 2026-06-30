@@ -22,6 +22,7 @@ import { useSessionActionAlert } from '@/hooks/useSessionQuickActions';
 import { useSettingMutable } from '@/sync/storage';
 import { useCongressRoster } from '@/hooks/useCongressRoster';
 import { CongressSeat } from '@/sync/congressTypes';
+import { deriveLiveness } from '@/sync/liveness';
 import { congressIdentity } from '@/utils/congressIdentity';
 import { WardenKnocksView, cardMatchesQuery } from './WardenKnocks';
 import { useWarden } from '@/hooks/useWarden';
@@ -274,6 +275,7 @@ function buildHearthsideViewData(
     data: SessionListViewItem[],
     roster: Map<string, CongressSeat>,
     workers: CongressSeat[],
+    rosterUnreachable: boolean,
 ): SessionListViewItem[] {
     if (roster.size === 0 && workers.length === 0) {
         return data;
@@ -324,7 +326,7 @@ function buildHearthsideViewData(
         if (item.type !== 'session') return 9;
         const seat = seatFor(item.session);
         if (!seat) return 8;
-        const { color } = congressHealthStatus(seat);
+        const { color } = congressHealthStatus(seat, rosterUnreachable);
         return color === HEALTH_RED ? 0 : color === HEALTH_AMBER ? 1 : color === HEALTH_GREEN ? 2 : 3;
     };
     congressRows.sort((a, b) => rank(a) - rank(b));
@@ -388,8 +390,8 @@ export function SessionsList({ previewData, previewRoster, previewWorkers }: Ses
         if (!data) {
             return data;
         }
-        return buildHearthsideViewData(data, roster, workers);
-    }, [data, roster, workers]);
+        return buildHearthsideViewData(data, roster, workers, rosterUnreachable);
+    }, [data, roster, workers, rosterUnreachable]);
     // Find-as-you-type across the whole cockpit (lanes + cards). When a query is
     // active the list flattens to matching rows; the WardenKnocks header gets the
     // same query (filters its cards); the MONITOR gauges hide (search-context noise).
@@ -509,6 +511,7 @@ export function SessionsList({ previewData, previewRoster, previewWorkers }: Ses
                     <SessionItem
                         session={item.session}
                         congressSeat={(item.session.claudeSessionId != null ? roster.get(item.session.claudeSessionId) : undefined) ?? roster.get(item.session.id)}
+                        rosterUnreachable={rosterUnreachable}
                         selected={selected}
                         isFirst={isFirst}
                         isLast={isLast}
@@ -516,7 +519,7 @@ export function SessionsList({ previewData, previewRoster, previewWorkers }: Ses
                     />
                 );
         }
-    }, [selectedSessionId, viewData, roster, toggleArchived]);
+    }, [selectedSessionId, viewData, roster, rosterUnreachable, toggleArchived]);
 
 
     // Remove this section as we'll use FlatList for all items now
@@ -617,17 +620,22 @@ const HEALTH_GREY = '#999';
 // a low-band amber, and ONLY refine — never override the honest verdict tier.
 const HEALTH_AMBER_BELOW = 0.5;
 
-function congressHealthStatus(seat: CongressSeat): { color: string; dotColor: string; isPulsing: boolean; isConnected: boolean } {
-    const v = seat.verdict.trim().toUpperCase();
+// PR-13/14: the dot is derived from the SAME reconciled verdict deriveLiveness()
+// produces — never re-read seat.verdict raw here. This is what closes G10/G14 (the
+// online+dead-at-once dot): a killed seat or an unreachable roster poll can no longer
+// render a confident green, because 'online' and 'color' both fall out of one function.
+function congressHealthStatus(seat: CongressSeat, rosterUnreachable: boolean): { color: string; dotColor: string; isPulsing: boolean; isConnected: boolean } {
     const mk = (color: string, isConnected: boolean) => ({ color, dotColor: color, isPulsing: false, isConnected });
-    if (v === 'ALIVE') {
+    const { verdict } = deriveLiveness(seat, rosterUnreachable);
+    if (verdict === 'alive') {
         const lowScore = seat.health?.score != null && seat.health.score < HEALTH_AMBER_BELOW;
         const blocked = seat.bottleneck?.direction === 'blocked-downstream';
         return mk(lowScore || blocked ? HEALTH_AMBER : HEALTH_GREEN, true);
     }
-    if (v === 'WEDGED') return mk(HEALTH_AMBER, true);
-    if (v.includes('DEAD') || v.includes('INCIDENT') || v.includes('CRASH')) return mk(HEALTH_RED, false);
-    // DAEMON-LOST / idle-cold / stale / unknown vocab → grey, fail-closed.
+    if (verdict === 'wedged') return mk(HEALTH_AMBER, true);
+    if (verdict === 'dead') return mk(HEALTH_RED, false);
+    // 'idle' (resumed-but-idle) / 'unverified' (poll can't be trusted right now) → grey,
+    // fail-closed — never a confident color off a signal we can't currently reconcile.
     return mk(HEALTH_GREY, false);
 }
 
@@ -724,9 +732,13 @@ function contextPressure(seat: CongressSeat): { label: string; color: string } |
     return { label: `${pct}%`, color };
 }
 
-const SessionItem = React.memo(({ session, congressSeat, selected, isFirst, isLast, isSingle }: {
+const SessionItem = React.memo(({ session, congressSeat, rosterUnreachable, selected, isFirst, isLast, isSingle }: {
     session: SessionRowData;
     congressSeat?: CongressSeat;
+    // PR-13: the same honest-feed unreachable signal the gauges already key off —
+    // threaded down so the dot can never read "online" off a roster poll that can no
+    // longer prove itself fresh.
+    rosterUnreachable?: boolean;
     selected?: boolean;
     isFirst?: boolean;
     isLast?: boolean;
@@ -738,8 +750,8 @@ const SessionItem = React.memo(({ session, congressSeat, selected, isFirst, isLa
     const baseStatus = STATUS_CONFIG[session.state];
     // Override to solid blue when session has unread results
     const status = congressSeat
-        // Congress lane: health → color (verdict tiers refined by health/bottleneck).
-        ? congressHealthStatus(congressSeat)
+        // Congress lane: health → color, reconciled against poll-liveness (PR-13/14).
+        ? congressHealthStatus(congressSeat, !!rosterUnreachable)
         : session.hasUnread
             ? { ...baseStatus, color: '#007AFF', dotColor: '#007AFF', isPulsing: false, isConnected: baseStatus.isConnected }
             : baseStatus;
