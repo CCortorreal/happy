@@ -21,6 +21,8 @@ import { sessionKill } from '@/sync/ops';
 import { isWorktreePath, getRepoPath, getWorktreeName } from '@/utils/worktree';
 import { useNewSessionDraft } from '@/hooks/useNewSessionDraft';
 import { useRouter } from 'expo-router';
+import { CongressSeat } from '@/sync/congressTypes';
+import { congressIdentity } from '@/utils/congressIdentity';
 
 const STATUS_CONFIG: Record<SessionState, { color: string; dotColor: string; isPulsing: boolean; isConnected: boolean }> = {
     disconnected: { color: '#999', dotColor: '#999', isPulsing: false, isConnected: false },
@@ -32,6 +34,10 @@ const STATUS_CONFIG: Record<SessionState, { color: string; dotColor: string; isP
 interface ActiveSessionsGroupProps {
     sessions: SessionRowData[];
     selectedSessionId?: string;
+    // PR-15: the registered congress roster, keyed by claudeSid/cuid — joined per-row
+    // so the title can read the seat's ROLE, not the cwd. Optional: callers without a
+    // roster (e.g. previews) just get the honest cwd-based fallback everywhere.
+    roster?: Map<string, CongressSeat>;
 }
 
 /**
@@ -163,7 +169,7 @@ const MachineSeparator = React.memo(({ machineName, machineId }: { machineName: 
     );
 });
 
-export function ActiveSessionsGroupCompact({ sessions, selectedSessionId }: ActiveSessionsGroupProps) {
+export function ActiveSessionsGroupCompact({ sessions, selectedSessionId, roster }: ActiveSessionsGroupProps) {
     const styles = stylesheet;
     const machines = useAllMachines();
 
@@ -255,6 +261,7 @@ export function ActiveSessionsGroupCompact({ sessions, selectedSessionId }: Acti
                                             <CompactSessionRow
                                                 key={session.id}
                                                 session={session}
+                                                congressSeat={(session.claudeSessionId != null ? roster?.get(session.claudeSessionId) : undefined) ?? roster?.get(session.id)}
                                                 selected={selectedSessionId === session.id}
                                                 showBorder={index < projectGroup.sessions.length - 1}
                                             />
@@ -270,8 +277,19 @@ export function ActiveSessionsGroupCompact({ sessions, selectedSessionId }: Acti
     );
 }
 
+// PR-15: the row title must read the seat's ROLE when one is registered, never a
+// confident-but-wrong cwd-derived name (G11 — "session label = cwd, not seat role").
+// A joinCollision'd seat's identity isn't attributable to this row either, so it
+// falls through to the same honest cwd/session.name fallback as an unregistered seat.
+function compactSessionLabel(session: SessionRowData, congressSeat?: CongressSeat): string {
+    if (congressSeat && !congressSeat.joinCollision) {
+        return congressIdentity(congressSeat);
+    }
+    return session.name;
+}
+
 // Compact session row with status dot indicator
-const CompactSessionRow = React.memo(({ session, selected, showBorder }: { session: SessionRowData; selected?: boolean; showBorder?: boolean }) => {
+const CompactSessionRow = React.memo(({ session, congressSeat, selected, showBorder }: { session: SessionRowData; congressSeat?: CongressSeat; selected?: boolean; showBorder?: boolean }) => {
     const styles = stylesheet;
     const { theme } = useUnistyles();
     const baseStatus = STATUS_CONFIG[session.state];
@@ -364,7 +382,7 @@ const CompactSessionRow = React.memo(({ session, selected, showBorder }: { sessi
                         ]}
                         numberOfLines={2}
                     >
-                        {session.name}
+                        {compactSessionLabel(session, congressSeat)}
                     </Text>
                 </View>
             </View>

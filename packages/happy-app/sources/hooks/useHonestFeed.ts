@@ -43,6 +43,10 @@ const DEFAULT_INTERVAL_MS = 5000;
 // Go loud only after a few consecutive failures so a single mid-write blip doesn't
 // flash an alarm — but a real outage surfaces within ~15s instead of staying dark.
 const DEFAULT_UNREACHABLE_AFTER = 3;
+// A poll that never settles (mesh-hung, nothing listening) is the failure mode a bare
+// `await fetcher()` can't see — it's neither resolved nor rejected, so it must be raced
+// against a deadline shorter than the poll interval and forced to count as a failure.
+const POLL_TIMEOUT_MS = 4000;
 
 export function useHonestFeed<T>(
     fetcher: (credentials: AuthCredentials) => Promise<{ stale: boolean; data: T | null }>,
@@ -85,7 +89,13 @@ export function useHonestFeed<T>(
             try {
                 const credentials = await TokenStorage.getCredentials();
                 if (mounted && credentials) {
-                    const res = await fetcherRef.current(credentials);
+                    // Race the fetch against a deadline so a HANGING (not refused) backend
+                    // still settles as a failure — without this, a pending promise is neither
+                    // success nor failure and `unreachable` never flips.
+                    const timeout = new Promise<never>((_, reject) => {
+                        setTimeout(() => reject(new Error('poll timeout')), POLL_TIMEOUT_MS);
+                    });
+                    const res = await Promise.race([fetcherRef.current(credentials), timeout]);
                     if (mounted && !res.stale) {
                         // Authoritative fresh read (content OR a genuine empty) -> adopt.
                         failures.current = 0;

@@ -149,6 +149,11 @@ const styles = StyleSheet.create((theme) => ({
         alignSelf: 'center',
         paddingHorizontal: 16,
         paddingVertical: 12,
+        // Reserved card height (PR-21) — surfaced-seat count and the calm-line swap
+        // must never reflow the list below. Sized to the common shape (header + one
+        // surfaced seat row); a calmer/busier card just adds quiet whitespace or
+        // grows past the floor, never collapses thinner.
+        minHeight: 96,
     },
     headerRow: {
         flexDirection: 'row',

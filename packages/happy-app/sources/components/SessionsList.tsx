@@ -22,6 +22,7 @@ import { useSessionActionAlert } from '@/hooks/useSessionQuickActions';
 import { useSettingMutable } from '@/sync/storage';
 import { useCongressRoster } from '@/hooks/useCongressRoster';
 import { CongressSeat } from '@/sync/congressTypes';
+import { congressIdentity } from '@/utils/congressIdentity';
 import { WardenKnocksView, cardMatchesQuery } from './WardenKnocks';
 import { useWarden } from '@/hooks/useWarden';
 import { FeedUnreachable } from '@/components/HonestSignal';
@@ -474,6 +475,7 @@ export function SessionsList({ previewData, previewRoster, previewWorkers }: Ses
                     <ActiveSessionsGroupCompact
                         sessions={item.sessions}
                         selectedSessionId={selectedSessionId}
+                        roster={roster}
                     />
                 );
 
@@ -600,15 +602,6 @@ const STATUS_CONFIG: Record<SessionState, { color: string; dotColor: string; isP
     waiting: { color: '#34C759', dotColor: '#34C759', isPulsing: false, isConnected: true },
     permission_required: { color: '#FF9500', dotColor: '#FF9500', isPulsing: true, isConnected: true },
 };
-
-// The Hearthside identity line: role, with the pedal (the lane's current thread)
-// appended when present — e.g. "BUILD lane · happy-dev".
-function congressIdentity(seat: CongressSeat): string {
-    const role = seat.role?.trim();
-    const pedal = seat.pedal?.trim();
-    if (role && pedal) return `${role} · ${pedal}`;
-    return role || pedal || seat.seat;
-}
 
 // Phase 1 OVERSEE — health → color (loom's universal red/amber/green/grey, same
 // semantics as every gauge). Derived honestly from the oracle verdict, refined by
