@@ -178,6 +178,11 @@ const styles = StyleSheet.create((theme) => ({
         alignSelf: 'center',
         paddingHorizontal: 16,
         paddingVertical: 12,
+        // Reserved card height (PR-21) — consumer-list churn, trend-line null-toggle,
+        // and verdict/reclaimable/orphanNote conditionals must never reflow the list
+        // below. Sized to the common live-card shape (header + bar + verdict + a
+        // couple consumer rows); a sparser card just has quiet whitespace below.
+        minHeight: 180,
     },
     headerRow: {
         flexDirection: 'row',

@@ -152,6 +152,10 @@ const styles = StyleSheet.create((theme) => ({
         alignSelf: 'center',
         paddingHorizontal: 16,
         paddingVertical: 12,
+        // Reserved card height (PR-21) — at-risk/blind-box rows and the healthy-line
+        // swap must never reflow the list below. Sized to the common shape (header +
+        // the all-clear line); a busier card just grows past the floor.
+        minHeight: 96,
     },
     headerRow: {
         flexDirection: 'row',
