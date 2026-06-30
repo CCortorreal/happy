@@ -75,8 +75,12 @@ function KnockCard({ item, optimisticAnswer, errored, onAnswer, onReauth }: {
     const { theme } = useUnistyles();
     const effectiveAnswer = item.a ?? optimisticAnswer ?? null;
     const answered = !!effectiveAnswer;
+    // Withdrawn/superseded (safety: superseded != live). A withdrawn card is dimmed,
+    // badged, and carries NO reply affordance — Carlos can never approve it.
+    const isWithdrawn = !!item.withdrawn_ts;
     const isGate = (item.kind ?? '').toLowerCase() === 'gate';
-    const accent = isGate ? ACCENT_GATE : ACCENT_ROUTINE;
+    // A withdrawn card loses its live accent (a red gate-edge would read as actionable).
+    const accent = isWithdrawn ? theme.colors.textSecondary : (isGate ? ACCENT_GATE : ACCENT_ROUTINE);
 
     // Draft is held until the answer is confirmed (the card flips to answered) — so a
     // failed send never loses what Carlos typed.
@@ -113,6 +117,7 @@ function KnockCard({ item, optimisticAnswer, errored, onAnswer, onReauth }: {
 
     const submit = (text: string) => {
         const trimmed = text.trim();
+        console.log('[card] submit', { id: item.id, trimmedLen: trimmed.length, empty: !trimmed });
         if (!trimmed) return;
         onAnswer(item.id, trimmed);
     };
@@ -127,17 +132,17 @@ function KnockCard({ item, optimisticAnswer, errored, onAnswer, onReauth }: {
     const recommended = choices.find((c) => c.recommended);
 
     return (
-        <View style={[styles.card, { borderLeftColor: accent }, answered && styles.cardAnswered]}>
+        <View style={[styles.card, { borderLeftColor: accent }, (answered || isWithdrawn) && styles.cardAnswered]}>
             <View style={styles.headerRow}>
                 <Text style={styles.sender} numberOfLines={1}>
                     {t('warden.from', { name: item.from })}
                 </Text>
                 <View style={[styles.kindChip, { backgroundColor: accent }]}>
                     <Text style={styles.kindChipText}>
-                        {isGate ? t('warden.gate') : t('warden.routine')}
+                        {isWithdrawn ? t('warden.withdrawn') : isGate ? t('warden.gate') : t('warden.routine')}
                     </Text>
                 </View>
-                {answered && (
+                {answered && !isWithdrawn && (
                     <Text style={styles.answeredLabel}>{t('warden.answered')}</Text>
                 )}
             </View>
@@ -167,7 +172,7 @@ function KnockCard({ item, optimisticAnswer, errored, onAnswer, onReauth }: {
                 </Pressable>
             ) : null}
 
-            {detailsOpen && hasCommands ? (
+            {detailsOpen && hasCommands && !isWithdrawn ? (
                 <View style={styles.commandsBlock}>
                     {commands.map((c, idx) => (
                         <View key={idx} style={styles.cmdRow}>
@@ -187,7 +192,18 @@ function KnockCard({ item, optimisticAnswer, errored, onAnswer, onReauth }: {
                 </View>
             ) : null}
 
-            {answered ? (
+            {isWithdrawn ? (
+                // Withdrawn/superseded: a demoted notice, NO reply affordance. The card
+                // stays visible (audit/coherence) but can never be approved.
+                <View style={styles.withdrawnNotice}>
+                    {item.superseded_by ? (
+                        <Text style={styles.supersededBy}>{t('warden.supersededBy', { id: item.superseded_by })}</Text>
+                    ) : null}
+                    {item.withdraw_reason ? (
+                        <Text style={styles.withdrawReason} numberOfLines={3}>{item.withdraw_reason}</Text>
+                    ) : null}
+                </View>
+            ) : answered ? (
                 <>
                     <Text style={styles.answer} numberOfLines={3}>{effectiveAnswer}</Text>
                     <Text style={styles.ack}>{t('warden.acknowledged', { to: item.from })}</Text>
@@ -293,12 +309,18 @@ export function WardenKnocks() {
     const [errors, setErrors] = React.useState<Record<string, 'auth' | 'send'>>({});
     // Answered history is collapsed by default — the active mantel stays clean.
     const [historyOpen, setHistoryOpen] = React.useState(false);
+    // Withdrawn/superseded cards collapse into their own fold — out of the active
+    // mantel (never approvable) but kept for audit/coherence.
+    const [withdrawnOpen, setWithdrawnOpen] = React.useState(false);
 
     const onAnswer = React.useCallback(async (id: string, text: string) => {
+        console.log('[card] onAnswer enter', { id, textLen: text.length });
         setErrors((e) => { const n = { ...e }; delete n[id]; return n; });
         setOverlay((o) => ({ ...o, [id]: text }));   // optimistic settle
         const creds = await TokenStorage.getCredentials();
+        console.log('[card] onAnswer creds', { hasCreds: !!creds, hasToken: !!creds?.token });
         const res = creds ? await answerWarden(creds, id, text) : { ok: false, authExpired: false };
+        console.log('[card] onAnswer result', res);
         if (!res.ok) {
             // Revert the optimistic state; the draft is still in the card (we never
             // cleared it), so nothing is lost. Surface WHY: a dead token wants a re-auth
@@ -312,16 +334,20 @@ export function WardenKnocks() {
         }
     }, []);
 
-    const isAnswered = (i: WardenItem) => !!i.a || !!overlay[i.id];
-    const open = items.filter((i) => !isAnswered(i));
+    // A withdrawn card is neither open nor answered — it's a third, demoted state
+    // (the safety invariant: superseded != live, never an approvable peer).
+    const isWithdrawn = (i: WardenItem) => !!i.withdrawn_ts;
+    const isAnswered = (i: WardenItem) => !isWithdrawn(i) && (!!i.a || !!overlay[i.id]);
+    const open = items.filter((i) => !isWithdrawn(i) && !isAnswered(i));
     const answered = items.filter(isAnswered);
+    const withdrawn = items.filter(isWithdrawn);
 
     // The absence of a knock IS the all-clear — render nothing when there's no
     // history and nothing open. BUT only if the feed is actually reachable: a
     // persistently-dead feed with nothing to show reads LOUD (loom's three-state
     // discipline), never a silent "all clear" — this is an action surface, so a
     // broken feed Carlos can't see is the worst failure mode.
-    if (open.length === 0 && answered.length === 0) {
+    if (open.length === 0 && answered.length === 0 && withdrawn.length === 0) {
         if (unreachable) {
             return (
                 <View style={styles.wrapper}>
@@ -381,6 +407,22 @@ export function WardenKnocks() {
                             </Text>
                         </Pressable>
                         {historyOpen ? answered.map(card) : null}
+                    </View>
+                ) : null}
+
+                {withdrawn.length > 0 ? (
+                    <View style={styles.history}>
+                        <Pressable
+                            onPress={() => setWithdrawnOpen((v) => !v)}
+                            hitSlop={8}
+                            style={styles.historyHeader}
+                        >
+                            <Text style={styles.historyChevron}>{withdrawnOpen ? '▾' : '▸'}</Text>
+                            <Text style={styles.historyTitle}>
+                                {t('warden.withdrawn')} · {withdrawn.length}
+                            </Text>
+                        </Pressable>
+                        {withdrawnOpen ? withdrawn.map(card) : null}
                     </View>
                 ) : null}
             </View>
@@ -535,6 +577,22 @@ const styles = StyleSheet.create((theme) => ({
         fontSize: 12,
         color: theme.colors.textSecondary,
         marginTop: 4,
+        fontStyle: 'italic',
+        ...Typography.default(),
+    },
+    withdrawnNotice: {
+        marginTop: 6,
+    },
+    supersededBy: {
+        fontSize: 12,
+        color: theme.colors.textSecondary,
+        ...Typography.default('semiBold'),
+    },
+    withdrawReason: {
+        fontSize: 12,
+        color: theme.colors.textSecondary,
+        lineHeight: 16,
+        marginTop: 2,
         fontStyle: 'italic',
         ...Typography.default(),
     },

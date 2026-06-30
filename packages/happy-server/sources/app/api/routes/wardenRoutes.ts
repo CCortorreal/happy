@@ -53,6 +53,13 @@ const WardenItemSchema = z.object({
     commands: z.array(WardenCommandSchema).nullish(),
     a: z.string().nullish(),            // the answer, once given
     answered_ts: z.string().nullish(),
+    // Withdraw/supersede (safety invariant: superseded != live). Set by the
+    // for-carlos.mjs `withdraw` verb. Presence of withdrawn_ts => the card is no
+    // longer answerable; superseded_by points at the replacement card's id.
+    withdrawn_ts: z.string().nullish(),
+    superseded_by: z.string().nullish(),
+    withdraw_reason: z.string().nullish(),
+    supersedes: z.string().nullish(),   // forward pointer on the LIVE winner card
 });
 
 const ForCarlosFileSchema = z.object({
@@ -132,6 +139,10 @@ export function wardenRoutes(app: Fastify) {
                         })).nullable(),
                         a: z.string().nullable(),
                         answered_ts: z.string().nullable(),
+                        withdrawn_ts: z.string().nullable(),
+                        superseded_by: z.string().nullable(),
+                        withdraw_reason: z.string().nullable(),
+                        supersedes: z.string().nullable(),
                     })),
                 })
             }
@@ -160,6 +171,10 @@ export function wardenRoutes(app: Fastify) {
                 })) ?? null,
                 a: i.a ?? null,
                 answered_ts: i.answered_ts ?? null,
+                withdrawn_ts: i.withdrawn_ts ?? null,
+                superseded_by: i.superseded_by ?? null,
+                withdraw_reason: i.withdraw_reason ?? null,
+                supersedes: i.supersedes ?? null,
             })),
         });
     });
@@ -189,7 +204,12 @@ export function wardenRoutes(app: Fastify) {
     }, async (request, reply) => {
         const { id, answer } = request.body;
         try {
-            await execFileAsync('node', [forCarlosBin(), 'answer', id, answer], {
+            // process.execPath (the absolute node binary this server already runs on),
+            // NOT bare 'node' — a daemon-spawned server gets a minimal PATH without
+            // C:\Program Files\nodejs, so execFile('node') silently ENOENT'd and the verb
+            // never ran → every answer 500'd (the morning incident). execPath has zero
+            // PATH dependency, so the answer verb launches regardless of how the server spawned.
+            await execFileAsync(process.execPath, [forCarlosBin(), 'answer', id, answer], {
                 timeout: 10000,
                 env: { ...process.env, PEER_SEAT: 'carlos' },
             });
@@ -202,6 +222,11 @@ export function wardenRoutes(app: Fastify) {
             if (/already answered/i.test(out)) {
                 return reply.send({ ok: true, alreadyAnswered: true });
             }
+            // Never a silent 500 again — log the real cause (the morning's failure was invisible).
+            request.log.error(
+                { errMsg: e?.message, code: e?.code, stderr: e?.stderr, stdout: e?.stdout, bin: forCarlosBin() },
+                'warden/answer execFile failed',
+            );
             return reply.code(500).send({ ok: false, alreadyAnswered: false });
         }
     });

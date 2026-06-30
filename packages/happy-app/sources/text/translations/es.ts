@@ -505,6 +505,8 @@ export const es: TranslationStructure = {
         gate: 'Decisión',
         routine: 'Rutina',
         answered: 'Respondido',
+        withdrawn: 'Retirado',
+        supersededBy: ({ id }: { id: string }) => `Reemplazado por ${id}`,
         reference: 'Referencia',
         from: ({ name }: { name: string }) => `de ${name}`,
         affirm: 'Sí, adelante',

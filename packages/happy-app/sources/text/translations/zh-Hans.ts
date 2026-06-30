@@ -506,6 +506,8 @@ export const zhHans: TranslationStructure = {
         gate: '待决',
         routine: '常规',
         answered: '已回复',
+        withdrawn: '已撤回',
+        supersededBy: ({ id }: { id: string }) => `已由 ${id} 取代`,
         reference: '参考',
         from: ({ name }: { name: string }) => `来自 ${name}`,
         affirm: '好，继续',

@@ -521,6 +521,8 @@ export const en: TranslationStructure = {
         gate: 'Gate',
         routine: 'Routine',
         answered: 'Answered',
+        withdrawn: 'Withdrawn',
+        supersededBy: ({ id }: { id: string }) => `Superseded by ${id}`,
         reference: 'Reference',
         from: ({ name }: { name: string }) => `from ${name}`,
         affirm: 'Yes, go ahead',

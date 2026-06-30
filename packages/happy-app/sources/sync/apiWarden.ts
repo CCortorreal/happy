@@ -69,6 +69,7 @@ export async function answerWarden(
     answer: string
 ): Promise<AnswerResult> {
     const API_ENDPOINT = getServerUrl();
+    console.log('[answerWarden] POST →', `${API_ENDPOINT}/v1/warden/answer`, { id, hasToken: !!credentials?.token });
     try {
         const response = await fetch(`${API_ENDPOINT}/v1/warden/answer`, {
             method: 'POST',
@@ -79,9 +80,11 @@ export async function answerWarden(
             },
             body: JSON.stringify({ id, answer }),
         });
+        console.log('[answerWarden] status', response.status);
         return { ok: response.ok, authExpired: response.status === 401 };
-    } catch {
+    } catch (e) {
         // Transport failure — distinct from a dead token; here a retry CAN help.
+        console.log('[answerWarden] THREW (transport)', String(e));
         return { ok: false, authExpired: false };
     }
 }

@@ -521,6 +521,8 @@ export const ru: TranslationStructure = {
         gate: 'Решение',
         routine: 'Рутина',
         answered: 'Отвечено',
+        withdrawn: 'Отозвано',
+        supersededBy: ({ id }: { id: string }) => `Заменено на ${id}`,
         reference: 'Ссылка',
         from: ({ name }: { name: string }) => `от ${name}`,
         affirm: 'Да, вперёд',

@@ -68,10 +68,11 @@ export function ContextGauge() {
     const { view, unreachable } = useHeartbeat();
 
     if (unreachable) {
-        // Feed dead = daemon-dead (freshness IS liveness) — loud, never a fake calm.
+        // Feed dead = something upstream stopped writing (the daemon OR ai-ops's heartbeat
+        // organ — we can't tell which from here, so don't assert a cause). Loud, never a fake calm.
         return (
             <View style={styles.container}>
-                <FeedUnreachable message="can’t read the heartbeat — the daemon may be down" />
+                <FeedUnreachable message="can’t read the heartbeat right now" />
             </View>
         );
     }

@@ -522,6 +522,8 @@ export const en = {
         gate: 'Gate',                                          // blocks until answered
         routine: 'Routine',                                    // optional, no rush
         answered: 'Answered',
+        withdrawn: 'Withdrawn',                                // superseded — no longer answerable
+        supersededBy: ({ id }: { id: string }) => `Superseded by ${id}`,
         reference: 'Reference',
         from: ({ name }: { name: string }) => `from ${name}`,  // sender line
         affirm: 'Go ahead',

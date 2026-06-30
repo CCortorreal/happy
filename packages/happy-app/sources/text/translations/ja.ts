@@ -506,6 +506,8 @@ export const ja: TranslationStructure = {
         gate: '要対応',
         routine: '任意',
         answered: '回答済み',
+        withdrawn: '取り下げ',
+        supersededBy: ({ id }: { id: string }) => `${id} に置き換え`,
         reference: '参照',
         from: ({ name }: { name: string }) => `${name} より`,
         affirm: 'はい、進めて',

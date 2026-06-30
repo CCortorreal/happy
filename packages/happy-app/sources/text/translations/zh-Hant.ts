@@ -505,6 +505,8 @@ export const zhHant: TranslationStructure = {
         gate: '待決',
         routine: '常規',
         answered: '已回覆',
+        withdrawn: '已撤回',
+        supersededBy: ({ id }: { id: string }) => `已由 ${id} 取代`,
         reference: '參考',
         from: ({ name }: { name: string }) => `來自 ${name}`,
         affirm: '好，繼續',

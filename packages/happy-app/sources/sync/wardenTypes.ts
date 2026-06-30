@@ -42,6 +42,14 @@ export const WardenItemSchema = z.object({
     commands: z.array(WardenCommandSchema).nullish(),
     a: z.string().nullable(),
     answered_ts: z.string().nullable(),
+    // Withdraw/supersede (safety: superseded != live). superseded_by/withdrawn_ts/
+    // withdraw_reason mark the DEAD (prior) card -> dimmed + un-answerable. `supersedes`
+    // is the forward pointer on the LIVE winner card (the prior id it replaces) -> an
+    // optional quiet 'replaces [id]' badge. snake_case, matching the for-carlos store.
+    withdrawn_ts: z.string().nullish(),
+    superseded_by: z.string().nullish(),
+    withdraw_reason: z.string().nullish(),
+    supersedes: z.string().nullish(),
 });
 
 export const WardenResponseSchema = z.object({
