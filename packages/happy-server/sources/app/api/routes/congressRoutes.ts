@@ -65,7 +65,14 @@ const CongressSeatSchema = z.object({
     // Phase 1 OVERSEE (dark-safe until the oracle emits).
     health: CongressHealthSchema.nullish(),
     bottleneck: CongressBottleneckSchema.nullish(),
-    lastAssistantText: z.string().nullish(),
+    // lastText = the lane's latest assistant turn (oracle: whitespace-collapsed,
+    // <=160 chars, null when the last turn was pure tool_use). RAW signal — the
+    // client voices it. joinCollision = the oracle's fail-closed flag: >1 session
+    // seat sharing one claudeSid -> every transcript-derived field (contextFill/
+    // lastText) is nulled for all of them and this is set true, so the cockpit
+    // renders 'identity unverified' instead of one seat's number on many tiles.
+    lastText: z.string().nullish(),
+    joinCollision: z.boolean().nullish(),
 });
 
 // The oracle's native envelope key is `roster` (its name across the whole
@@ -167,7 +174,8 @@ export function congressRoutes(app: Fastify) {
                             direction: z.string(),
                             approximate: z.boolean().nullable(),
                         }).nullable(),
-                        lastAssistantText: z.string().nullable(),
+                        lastText: z.string().nullable(),
+                        joinCollision: z.boolean().nullable(),
                     })),
                 })
             }
@@ -209,7 +217,8 @@ export function congressRoutes(app: Fastify) {
                 bottleneck: s.bottleneck
                     ? { direction: s.bottleneck.direction, approximate: s.bottleneck.approximate ?? null }
                     : null,
-                lastAssistantText: s.lastAssistantText ?? null,
+                lastText: s.lastText ?? null,
+                joinCollision: s.joinCollision ?? null,
             })),
         });
     });

@@ -556,6 +556,10 @@ function congressHealthStatus(seat: CongressSeat): { color: string; dotColor: st
 // that isn't liveness-fresh never shows a present-tense "thought" — it reads
 // "(quiet — last: …)", greyed, never a frozen-fresh lie.
 function voiceThought(seat: CongressSeat): { text: string; stale: boolean } {
+    // Fail-closed identity fence (#0): a collided seat's transcript may be a foreign
+    // lane's — never voice a thought we can't attribute. 'identity unverified',
+    // greyed, until the impostor re-registers and the oracle clears the collision.
+    if (seat.joinCollision) return { text: 'identity unverified', stale: true };
     const alive = seat.verdict.trim().toUpperCase() === 'ALIVE';
     const work = seat.currentWork?.trim();
     // Humanize the pedal slug for warmth: 'cortorreal-writing-grounding' ->
@@ -578,6 +582,10 @@ function voiceThought(seat: CongressSeat): { text: string; stale: boolean } {
 // default, ambers/reds only as the pressure is earned. Dark-safe (null when absent).
 const CONTEXT_FIRE_TOKENS = 750_000;
 function contextPressure(seat: CongressSeat): { label: string; color: string } | null {
+    // Fail-closed: a collided seat's contextFill is another lane's number — don't
+    // render a pressure pill we can't attribute (the oracle already nulls it, but
+    // guard explicitly so a render-order change can't leak the lie).
+    if (seat.joinCollision) return null;
     if (seat.contextFill == null) return null;
     const pct = Math.round((seat.contextFill / CONTEXT_FIRE_TOKENS) * 100);
     const color = pct >= 90 ? HEALTH_RED : pct >= 75 ? HEALTH_AMBER : '#999';
