@@ -6,11 +6,14 @@ import { StyleSheet, useUnistyles } from 'react-native-unistyles';
 import { Typography } from '@/constants/Typography';
 import { layout } from './layout';
 import { useWarden } from '@/hooks/useWarden';
+import { useWardenStatus } from '@/hooks/useWardenStatus';
 import { WardenItem } from '@/sync/wardenTypes';
 import { answerWarden } from '@/sync/apiWarden';
 import { TokenStorage } from '@/auth/tokenStorage';
 import { useAuth } from '@/auth/AuthContext';
 import { FeedUnreachable } from '@/components/HonestSignal';
+import { StatusDot } from '@/components/StatusDot';
+import { formatLastSeen } from '@/utils/sessionUtils';
 import { t } from '@/text';
 
 // WardenKnocks — Hearth P1 RELATE + Slice A (answering) + Tuning Round 1.
@@ -44,6 +47,80 @@ import { t } from '@/text';
 
 const ACCENT_GATE = '#E5484D';
 const ACCENT_ROUTINE = '#9B7EDE';
+
+// WardenDeathPip — PR-30 Slice 1 (the honest-death pip).
+//
+// munder's AwarenessStrip honest-death organ turned on the Warden itself: a dead
+// watchdog must LOOK dead. The pip is green ONLY while the Warden's watch loop is
+// provably alive — and decays to grey BY ITSELF if ticks stop, on the client's own
+// clock, never a frozen-fresh lie. It never trusts a "healthy"/"overall" flag from
+// the file; the ONLY input is `ts` (the watch loop's last write time), aged against
+// `Date.now()` every tick.
+//
+// Thresholds (the watch loop polls every ~20s — design doc + task spec):
+//   - FRESH  (green):  age <  60s  — at most one missed beat.
+//   - GREYING:         60s <= age <= 120s — the loop has missed 2-3 beats; the pip
+//     fades green->grey linearly across this window rather than flipping at a hard
+//     edge, so "going quiet" reads as a process, not a jump-cut.
+//   - DEAD   (grey):   age >  120s — several missed beats in a row; the watch loop
+//     reads as genuinely dead, not just a slow poll.
+// UNKNOWN (no ts at all — feed unreachable or never reported) renders the same dead
+// grey + a distinct "no word yet" copy, never a confident color over missing data.
+const PIP_FRESH_MS = 60_000;
+const PIP_DEAD_MS = 120_000;
+const PIP_GREEN = '#34C759';
+const PIP_GREY = '#8E8E93';
+
+// Linear interpolation of two hex colors — used to fade the pip continuously across
+// the greying window instead of a binary green/grey flip (the "decays BY ITSELF"
+// language in the design is a gradient, not a step function).
+function lerpColor(from: string, to: string, frac: number): string {
+    const clamp = Math.max(0, Math.min(1, frac));
+    const parse = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+    const [r1, g1, b1] = parse(from);
+    const [r2, g2, b2] = parse(to);
+    const mix = (a: number, b: number) => Math.round(a + (b - a) * clamp);
+    return `#${[mix(r1, r2), mix(g1, g2), mix(b1, b2)].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+}
+
+function WardenDeathPip() {
+    const { status, unreachable } = useWardenStatus();
+    // Self-aging: re-render every second purely to re-evaluate `Date.now() - ts`, so
+    // the pip ages even if no new poll ever lands again (the "decays by itself on a
+    // local clock" requirement — it must not need a fresh fetch to go grey).
+    const [, forceTick] = React.useReducer((n: number) => n + 1, 0);
+    React.useEffect(() => {
+        const id = setInterval(forceTick, 1000);
+        return () => clearInterval(id);
+    }, []);
+
+    const tsMs = status?.ts ? Date.parse(status.ts) : NaN;
+    const hasTs = !unreachable && Number.isFinite(tsMs);
+    const ageMs = hasTs ? Date.now() - tsMs : Infinity;
+
+    let color: string;
+    let label: string;
+    if (!hasTs) {
+        color = PIP_GREY;
+        label = t('warden.pipUnknown');
+    } else if (ageMs <= PIP_FRESH_MS) {
+        color = PIP_GREEN;
+        label = t('warden.pipFresh');
+    } else if (ageMs <= PIP_DEAD_MS) {
+        color = lerpColor(PIP_GREEN, PIP_GREY, (ageMs - PIP_FRESH_MS) / (PIP_DEAD_MS - PIP_FRESH_MS));
+        label = t('warden.pipStale');
+    } else {
+        color = PIP_GREY;
+        label = t('warden.pipDead', { time: formatLastSeen(tsMs, false) });
+    }
+
+    return (
+        <View style={styles.pipRow}>
+            <StatusDot color={color} size={7} />
+            <Text style={styles.pipLabel} numberOfLines={1}>{label}</Text>
+        </View>
+    );
+}
 
 // Progressive disclosure (Carlos's "the mantel must scan in ~2s, not be a wall"): a
 // knock rests as a tight HEADLINE + one-line summary; the full accreted body (the
@@ -359,11 +436,16 @@ export function WardenKnocksView({ items, unreachable, query }: { items: WardenI
     const answered = items.filter((i) => isAnswered(i) && matchesCard(i));
     const withdrawn = items.filter((i) => isWithdrawn(i) && matchesCard(i));
 
-    // The absence of a knock IS the all-clear — render nothing when there's no
-    // history and nothing open. BUT only if the feed is actually reachable: a
+    // The absence of a knock IS the all-clear — render (almost) nothing when there's
+    // no history and nothing open. BUT only if the feed is actually reachable: a
     // persistently-dead feed with nothing to show reads LOUD (loom's three-state
     // discipline), never a silent "all clear" — this is an action surface, so a
     // broken feed Carlos can't see is the worst failure mode.
+    //
+    // The death pip is the one thing that's NEVER fully silent — quiet presence
+    // (PR-30 design's state 1) is "render almost nothing" + the pip, not literally
+    // nothing. It mounts during search too (it isn't a "card", it's the Warden's own
+    // pulse) so Carlos can always tell the Warden is alive while hunting.
     if (open.length === 0 && answered.length === 0 && withdrawn.length === 0) {
         // During an active search, an empty result is just 'no matches' — not the
         // all-clear, and not the place for the feed-down LOUD banner.
@@ -372,11 +454,21 @@ export function WardenKnocksView({ items, unreachable, query }: { items: WardenI
                 <View style={styles.wrapper}>
                     <View style={styles.container}>
                         <FeedUnreachable message={t('warden.feedUnreachable')} />
+                        <WardenDeathPip />
                     </View>
                 </View>
             );
         }
-        return null;
+        if (q) {
+            return null;
+        }
+        return (
+            <View style={styles.wrapper}>
+                <View style={styles.container}>
+                    <WardenDeathPip />
+                </View>
+            </View>
+        );
     }
 
     const card = (item: WardenItem) => (
@@ -395,6 +487,7 @@ export function WardenKnocksView({ items, unreachable, query }: { items: WardenI
     return (
         <View style={styles.wrapper}>
             <View style={styles.container}>
+                {!q ? <WardenDeathPip /> : null}
                 {open.length > 0 ? (
                     <>
                         <Text style={styles.sectionTitle}>{t('warden.sectionTitle')}</Text>
@@ -739,5 +832,20 @@ const styles = StyleSheet.create((theme) => ({
         textTransform: 'uppercase',
         letterSpacing: 0.5,
         ...Typography.default('semiBold'),
+    },
+    // The honest-death pip — quiet, small, never steals focus. Sits above the
+    // knock-cards (or alone, in the quiet-presence state) as the Warden's pulse.
+    pipRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingVertical: 4,
+        marginBottom: 4,
+        marginLeft: 4,
+    },
+    pipLabel: {
+        fontSize: 11,
+        color: theme.colors.textSecondary,
+        ...Typography.default(),
     },
 }));

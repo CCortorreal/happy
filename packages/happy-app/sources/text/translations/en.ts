@@ -533,6 +533,10 @@ export const en: TranslationStructure = {
         acknowledged: ({ to }: { to: string }) => `Got it — sent to ${to}`,
         recommends: ({ name, choice }: { name: string; choice: string }) => `${name} leans ${choice}`,
         feedUnreachable: "can’t reach the Warden — answers won’t send",
+        pipFresh: 'the Warden is awake',
+        pipStale: 'the Warden is going quiet',
+        pipDead: ({ time }: { time: string }) => `the Warden went quiet — last seen ${time}`,
+        pipUnknown: 'no word yet from the Warden',
     },
 
     sessionsList: {

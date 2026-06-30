@@ -68,6 +68,26 @@ export const WardenAnswerResponseSchema = z.object({
     alreadyAnswered: z.boolean(),
 });
 
+// PR-30 Slice 1 — the honest-death pip's data source. Mirrors GET /v1/warden/status,
+// a thin passthrough of warden-status.json (the watch loop's heartbeat). `ts` is the
+// ONLY field the pip trusts for liveness — the client ages it against its own clock
+// every tick; `overall`/`checks` are carried for the later watched-floor slice but
+// Slice 1 doesn't render them.
+export const WardenCheckSchema = z.object({
+    status: z.string(),
+    detail: z.string().nullable(),
+});
+
+export const WardenStatusResponseSchema = z.object({
+    stale: z.boolean(),
+    ts: z.string().nullable(),
+    overall: z.string().nullable(),
+    checks: z.record(z.string(), WardenCheckSchema).nullable(),
+});
+
+export type WardenCheck = z.infer<typeof WardenCheckSchema>;
+export type WardenStatusResponse = z.infer<typeof WardenStatusResponseSchema>;
+
 export type WardenChoice = z.infer<typeof WardenChoiceSchema>;
 export type WardenCommand = z.infer<typeof WardenCommandSchema>;
 export type WardenItem = z.infer<typeof WardenItemSchema>;

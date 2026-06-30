@@ -17,9 +17,10 @@ const execFileAsync = promisify(execFile);
 // not the encrypted-entity socket pipeline. Same _recovery_mint file-read
 // pattern as the congress roster route.
 //
-// Scope: this draft serves the asks (knock-cards). The honest-death pip + the
-// watched-floor (warden-status.json) are a later slice and will extend this same
-// route additively.
+// Scope: PR-30 Slice 1 adds the honest-death pip's data source (GET /v1/warden/status,
+// a thin passthrough of warden-status.json). The watched-floor RENDER (the checks as
+// named status rooms) is still a later slice — this route exposes `checks` already
+// since the file carries it for free, but Slice 1's client only consumes `ts`/`overall`.
 
 // One for-carlos item. Every field but id/from/q is optional at the read
 // boundary — the file is script-written and re-read on a timer, so we normalize
@@ -111,6 +112,59 @@ function readForCarlos(): { items: z.infer<typeof WardenItemSchema>[]; stale: bo
     }
 
     return { items: parsed.data.items, stale: false };
+}
+
+// warden-status.json — the watch loop's heartbeat file (Hearth's honest-death pip
+// source). GROUND TRUTH: warden-watch.mjs writes this NEXT TO ITSELF (its own script
+// dir, .claude/tools/warden/), NOT under ~/.happy-selfhost/ like for-carlos.json — so
+// this is intentionally a different path function. Env-overridable (same shape as
+// FOR_CARLOS_BIN) so a non-default box layout can point elsewhere.
+const WardenCheckSchema = z.object({
+    status: z.string(),
+    detail: z.string().nullish(),
+});
+
+const WardenStatusFileSchema = z.object({
+    ts: z.string(),
+    overall: z.string(),
+    checks: z.record(z.string(), WardenCheckSchema).nullish(),
+});
+
+function wardenStatusPath(): string {
+    if (process.env.WARDEN_STATUS_PATH) {
+        return process.env.WARDEN_STATUS_PATH;
+    }
+    const home = process.env.USERPROFILE || process.env.HOME || '';
+    return join(home, 'Desktop', 'projects', '.claude', 'tools', 'warden', 'warden-status.json');
+}
+
+// Read + normalize warden-status.json. Defensive like readForCarlos: absent / mid-
+// write / malformed -> stale, never throws. CRITICAL: this function does NOT judge
+// freshness by age — it only reports whether the file was readable/parseable. The
+// honest-death pip's age judgment is a CLIENT-side computation against `ts` on the
+// client's own clock (the design's load-bearing rule: never trust an "I'm alive"
+// flag from the file, including an implicit one this route might compute itself).
+function readWardenStatus(): { status: z.infer<typeof WardenStatusFileSchema> | null; stale: boolean } {
+    let raw: string;
+    try {
+        raw = readFileSync(wardenStatusPath(), 'utf8');
+    } catch {
+        return { status: null, stale: true };
+    }
+
+    let json: unknown;
+    try {
+        json = JSON.parse(raw);
+    } catch {
+        return { status: null, stale: true };
+    }
+
+    const parsed = WardenStatusFileSchema.safeParse(json);
+    if (!parsed.success) {
+        return { status: null, stale: true };
+    }
+
+    return { status: parsed.data, stale: false };
 }
 
 export function wardenRoutes(app: Fastify) {
@@ -232,5 +286,36 @@ export function wardenRoutes(app: Fastify) {
             );
             return reply.code(500).send({ ok: false, alreadyAnswered: false });
         }
+    });
+
+    // GET /v1/warden/status — the watch loop's heartbeat (the honest-death pip's data
+    // source). Thin passthrough: this route makes NO freshness judgment — `stale` here
+    // means only "the file was unreadable/unparseable", never "the ts looks old". The
+    // client computes the pip's age band itself, every tick, off `ts` + its own clock.
+    app.get('/v1/warden/status', {
+        schema: {
+            response: {
+                200: z.object({
+                    stale: z.boolean(),
+                    ts: z.string().nullable(),
+                    overall: z.string().nullable(),
+                    checks: z.record(z.string(), z.object({
+                        status: z.string(),
+                        detail: z.string().nullable(),
+                    })).nullable(),
+                })
+            }
+        },
+        preHandler: app.authenticate
+    }, async (request, reply) => {
+        const { status, stale } = readWardenStatus();
+        return reply.send({
+            stale,
+            ts: status?.ts ?? null,
+            overall: status?.overall ?? null,
+            checks: status?.checks
+                ? Object.fromEntries(Object.entries(status.checks).map(([k, v]) => [k, { status: v.status, detail: v.detail ?? null }]))
+                : null,
+        });
     });
 }

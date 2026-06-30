@@ -518,6 +518,10 @@ export const zhHans: TranslationStructure = {
         acknowledged: ({ to }: { to: string }) => `已收到 — 已发送给 ${to}`,
         recommends: ({ name, choice }: { name: string; choice: string }) => `${name} 倾向于 ${choice}`,
         feedUnreachable: '无法连接 Warden — 回复将无法发送',
+        pipFresh: 'Warden 醒着',
+        pipStale: 'Warden 正在变得安静',
+        pipDead: ({ time }: { time: string }) => `Warden 已经安静下来 — 最后一次活动 ${time}`,
+        pipUnknown: '还没有 Warden 的消息',
     },
 
     sessionsList: {
