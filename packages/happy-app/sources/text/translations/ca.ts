@@ -519,6 +519,11 @@ export const ca: TranslationStructure = {
         feedUnreachable: "no es pot contactar amb el Warden — les respostes no s'enviaran",
     },
 
+    sessionsList: {
+        searchPlaceholder: 'Cerca lanes i targetes…',
+        searchEmpty: ({ query }: { query: string }) => `Cap lane ni targeta coincideix amb “${query}”`,
+    },
+
     worker: {
         drafting: 'redactant…',
         idle: 'inactiu',

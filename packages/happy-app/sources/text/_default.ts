@@ -544,6 +544,12 @@ export const en = {
         feedUnreachable: "can’t reach the Warden — answers won’t send",
     },
 
+    sessionsList: {
+        // Cockpit find-as-you-type across lanes + Warden cards.
+        searchPlaceholder: 'Search lanes & cards…',
+        searchEmpty: ({ query }: { query: string }) => `No lanes or cards match “${query}”`,
+    },
+
     worker: {
         // Pull-worker (brain) card copy — a worker is watched, not conversable.
         drafting: 'drafting…',

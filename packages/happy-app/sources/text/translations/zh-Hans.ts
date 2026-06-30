@@ -520,6 +520,11 @@ export const zhHans: TranslationStructure = {
         feedUnreachable: '无法连接 Warden — 回复将无法发送',
     },
 
+    sessionsList: {
+        searchPlaceholder: '搜索通道和卡片…',
+        searchEmpty: ({ query }: { query: string }) => `没有匹配“${query}”的通道或卡片`,
+    },
+
     worker: {
         drafting: '起草中…',
         idle: '空闲',

@@ -535,6 +535,11 @@ export const ru: TranslationStructure = {
         feedUnreachable: 'нет связи с Warden — ответы не отправятся',
     },
 
+    sessionsList: {
+        searchPlaceholder: 'Поиск по линиям и карточкам…',
+        searchEmpty: ({ query }: { query: string }) => `Нет линий или карточек по запросу «${query}»`,
+    },
+
     worker: {
         drafting: 'черновик…',
         idle: 'простой',

@@ -298,7 +298,7 @@ function groupByRef(open: WardenItem[]): OpenGroup[] {
     return groups;
 }
 
-export function WardenKnocks() {
+export function WardenKnocks({ query }: { query?: string } = {}) {
     const { items, unreachable } = useWarden();
     const { logout } = useAuth();   // one-tap re-auth on a dead-token card (clears creds + reloads to login)
     // Optimistic answers (id -> text) shown immediately; reconciled by the next poll
@@ -338,9 +338,14 @@ export function WardenKnocks() {
     // (the safety invariant: superseded != live, never an approvable peer).
     const isWithdrawn = (i: WardenItem) => !!i.withdrawn_ts;
     const isAnswered = (i: WardenItem) => !isWithdrawn(i) && (!!i.a || !!overlay[i.id]);
-    const open = items.filter((i) => !isWithdrawn(i) && !isAnswered(i));
-    const answered = items.filter(isAnswered);
-    const withdrawn = items.filter(isWithdrawn);
+    // Find-as-you-type: when a query is active (threaded from the cockpit search box),
+    // a card matches on its plain content — the ask, the sender, the why, the ref.
+    const q = query?.trim().toLowerCase();
+    const matchesCard = (i: WardenItem) =>
+        !q || [i.q, i.from, i.ctx, i.ref].filter(Boolean).join(' ').toLowerCase().includes(q);
+    const open = items.filter((i) => !isWithdrawn(i) && !isAnswered(i) && matchesCard(i));
+    const answered = items.filter((i) => isAnswered(i) && matchesCard(i));
+    const withdrawn = items.filter((i) => isWithdrawn(i) && matchesCard(i));
 
     // The absence of a knock IS the all-clear — render nothing when there's no
     // history and nothing open. BUT only if the feed is actually reachable: a
@@ -348,7 +353,9 @@ export function WardenKnocks() {
     // discipline), never a silent "all clear" — this is an action surface, so a
     // broken feed Carlos can't see is the worst failure mode.
     if (open.length === 0 && answered.length === 0 && withdrawn.length === 0) {
-        if (unreachable) {
+        // During an active search, an empty result is just 'no matches' — not the
+        // all-clear, and not the place for the feed-down LOUD banner.
+        if (unreachable && !q) {
             return (
                 <View style={styles.wrapper}>
                     <View style={styles.container}>

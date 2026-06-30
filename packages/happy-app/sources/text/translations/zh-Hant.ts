@@ -519,6 +519,11 @@ export const zhHant: TranslationStructure = {
         feedUnreachable: '無法連線 Warden — 回覆將無法傳送',
     },
 
+    sessionsList: {
+        searchPlaceholder: '搜尋通道與卡片…',
+        searchEmpty: ({ query }: { query: string }) => `沒有符合「${query}」的通道或卡片`,
+    },
+
     worker: {
         drafting: '起草中…',
         idle: '閒置',

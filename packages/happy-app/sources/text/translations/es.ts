@@ -519,6 +519,11 @@ export const es: TranslationStructure = {
         feedUnreachable: 'no se puede contactar al Warden — las respuestas no se enviarán',
     },
 
+    sessionsList: {
+        searchPlaceholder: 'Buscar lanes y tarjetas…',
+        searchEmpty: ({ query }: { query: string }) => `Ninguna lane o tarjeta coincide con “${query}”`,
+    },
+
     worker: {
         drafting: 'redactando…',
         idle: 'inactivo',

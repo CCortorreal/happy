@@ -517,6 +517,11 @@ export const it: TranslationStructure = {
         feedUnreachable: 'impossibile raggiungere il Warden — le risposte non verranno inviate',
     },
 
+    sessionsList: {
+        searchPlaceholder: 'Cerca lane e schede…',
+        searchEmpty: ({ query }: { query: string }) => `Nessuna lane o scheda corrisponde a “${query}”`,
+    },
+
     worker: {
         drafting: 'in stesura…',
         idle: 'inattivo',

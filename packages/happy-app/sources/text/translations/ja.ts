@@ -520,6 +520,11 @@ export const ja: TranslationStructure = {
         feedUnreachable: 'Warden に接続できません — 返信は送信されません',
     },
 
+    sessionsList: {
+        searchPlaceholder: 'レーンとカードを検索…',
+        searchEmpty: ({ query }: { query: string }) => `「${query}」に一致するレーンやカードはありません`,
+    },
+
     worker: {
         drafting: '下書き中…',
         idle: 'アイドル',

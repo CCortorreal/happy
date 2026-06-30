@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Pressable, FlatList, Platform } from 'react-native';
+import { View, Pressable, FlatList, Platform, TextInput } from 'react-native';
 import { Text } from '@/components/StyledText';
 import { usePathname } from 'expo-router';
 import { SessionListViewItem, SessionRowData } from '@/sync/storage';
@@ -11,7 +11,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useVisibleSessionListViewData } from '@/hooks/useVisibleSessionListViewData';
 import { Typography } from '@/constants/Typography';
 import { StatusDot } from './StatusDot';
-import { StyleSheet } from 'react-native-unistyles';
+import { StyleSheet, useUnistyles } from 'react-native-unistyles';
 import { useIsTablet } from '@/utils/responsive';
 import { requestReview } from '@/utils/requestReview';
 import { UpdateBanner } from './UpdateBanner';
@@ -173,6 +173,43 @@ const stylesheet = StyleSheet.create((theme) => ({
         paddingHorizontal: 16,
         paddingVertical: 6,
     },
+    searchBar: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        width: '100%',
+        maxWidth: layout.maxWidth,
+        alignSelf: 'center',
+        marginHorizontal: 16,
+        marginTop: 8,
+        marginBottom: 4,
+        paddingHorizontal: 10,
+        paddingVertical: Platform.OS === 'web' ? 8 : 6,
+        borderRadius: 10,
+        backgroundColor: theme.colors.groupped.background,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: theme.colors.divider,
+    },
+    searchIcon: {
+        opacity: 0.7,
+    },
+    searchInput: {
+        flex: 1,
+        fontSize: 14,
+        color: theme.colors.text,
+        ...Typography.default(),
+    },
+    searchClear: {
+        padding: 2,
+    },
+    searchEmpty: {
+        fontSize: 13,
+        color: theme.colors.textSecondary,
+        textAlign: 'center',
+        paddingVertical: 16,
+        paddingHorizontal: 16,
+        ...Typography.default(),
+    },
     statusText: {
         fontSize: 12,
         fontWeight: '500',
@@ -330,6 +367,7 @@ export interface SessionsListProps {
 
 export function SessionsList({ previewData, previewRoster, previewWorkers }: SessionsListProps = {}) {
     const styles = stylesheet;
+    const { theme } = useUnistyles();
     const safeArea = useSafeAreaInsets();
     // Hooks always run (stable hook order); preview props only swap the data source.
     const liveData = useVisibleSessionListViewData();
@@ -350,6 +388,16 @@ export function SessionsList({ previewData, previewRoster, previewWorkers }: Ses
         }
         return buildHearthsideViewData(data, roster, workers);
     }, [data, roster, workers]);
+    // Find-as-you-type across the whole cockpit (lanes + cards). When a query is
+    // active the list flattens to matching rows; the WardenKnocks header gets the
+    // same query (filters its cards); the MONITOR gauges hide (search-context noise).
+    const [query, setQuery] = React.useState('');
+    const needle = query.trim().toLowerCase();
+    const searching = needle.length > 0;
+    const displayData = React.useMemo(() => {
+        if (!searching || !viewData) return viewData;
+        return viewData.filter((item) => viewItemMatchesQuery(item, roster, needle));
+    }, [viewData, roster, needle, searching]);
     const pathname = usePathname();
     const isTablet = useIsTablet();
     const [hideInactiveSessions, setHideInactiveSessions] = useSettingMutable('hideInactiveSessions');
@@ -467,29 +515,58 @@ export function SessionsList({ previewData, previewRoster, previewWorkers }: Ses
     const HeaderComponent = React.useCallback(() => {
         return (
             <>
-                {/* The Warden's notes on the mantel — renders nothing when empty. */}
-                <WardenKnocks />
-                {/* MONITOR pillar: the resilience gauges (loom owns final placement/feel). */}
-                <ContextGauge />
-                <VramGauge />
-                <DiskGauge />
-                <UpdateBanner />
+                {/* The Warden's notes on the mantel — renders nothing when empty.
+                    During a search it filters its cards to the same query. */}
+                <WardenKnocks query={searching ? needle : undefined} />
+                {/* MONITOR pillar: the resilience gauges (loom owns final placement/feel).
+                    Hidden during a search — they're noise when hunting a lane/card. */}
+                {!searching ? (
+                    <>
+                        <ContextGauge />
+                        <VramGauge />
+                        <DiskGauge />
+                        <UpdateBanner />
+                    </>
+                ) : null}
             </>
         );
-    }, []);
+    }, [searching, needle]);
 
     // Footer removed - all sessions now shown inline
 
     return (
         <View style={styles.container}>
             <View style={styles.contentContainer}>
+                {/* Sticky find-as-you-type — stays put while the results scroll. */}
+                <View style={styles.searchBar}>
+                    <Ionicons name="search" size={16} color={theme.colors.textSecondary} style={styles.searchIcon} />
+                    <TextInput
+                        style={styles.searchInput}
+                        value={query}
+                        onChangeText={setQuery}
+                        placeholder={t('sessionsList.searchPlaceholder')}
+                        placeholderTextColor={theme.colors.textSecondary}
+                        returnKeyType="search"
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        clearButtonMode="while-editing"
+                    />
+                    {searching ? (
+                        <Pressable onPress={() => setQuery('')} hitSlop={8} style={styles.searchClear}>
+                            <Ionicons name="close-circle" size={16} color={theme.colors.textSecondary} />
+                        </Pressable>
+                    ) : null}
+                </View>
                 {rosterUnreachable ? (
                     <View style={styles.rosterUnreachable}>
                         <FeedUnreachable message="can’t reach the congress right now" />
                     </View>
                 ) : null}
+                {searching && displayData && displayData.length === 0 ? (
+                    <Text style={styles.searchEmpty}>{t('sessionsList.searchEmpty', { query: query.trim() })}</Text>
+                ) : null}
                 <FlatList
-                    data={viewData}
+                    data={displayData}
                     renderItem={renderItem}
                     keyExtractor={keyExtractor}
                     extraData={selectedSessionId}
@@ -580,6 +657,24 @@ function voiceThought(seat: CongressSeat): { text: string; stale: boolean } {
 // rendered as a % toward the 750K auto-compact fire — the first MONITOR signal on
 // the tile, so Carlos can watch lanes climb toward their fire. Restrained: muted by
 // default, ambers/reds only as the pressure is earned. Dark-safe (null when absent).
+// Find-as-you-type matcher: with 12+ lanes the roster is untenable to scan, so the
+// cockpit search box flattens to matching rows. A 'session' matches on its name/
+// subtitle/path + its joined congress seat (seat/role/pedal); a worker on seat/role/
+// currentWork. Headers/groups/toggles drop during search (results, not the browse view).
+function viewItemMatchesQuery(item: SessionListViewItem, roster: Map<string, CongressSeat>, needle: string): boolean {
+    if (item.type === 'session') {
+        const s = item.session;
+        const seat = (s.claudeSessionId != null ? roster.get(s.claudeSessionId) : undefined) ?? roster.get(s.id);
+        return [s.name, s.subtitle, s.path, seat?.seat, seat?.role, seat?.pedal]
+            .filter(Boolean).join(' ').toLowerCase().includes(needle);
+    }
+    if (item.type === 'congress-worker') {
+        const w = item.worker;
+        return [w.seat, w.role, w.currentWork].filter(Boolean).join(' ').toLowerCase().includes(needle);
+    }
+    return false;
+}
+
 const CONTEXT_FIRE_TOKENS = 750_000;
 function contextPressure(seat: CongressSeat): { label: string; color: string } | null {
     // Fail-closed: a collided seat's contextFill is another lane's number — don't
