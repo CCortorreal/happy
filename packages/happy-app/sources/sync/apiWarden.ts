@@ -2,7 +2,7 @@ import { AuthCredentials } from '@/auth/tokenStorage';
 import { backoff } from '@/utils/time';
 import { getServerUrl } from './serverConfig';
 import { getHappyClientId } from './apiSocket';
-import { WardenResponse, WardenResponseSchema } from './wardenTypes';
+import { WardenResponse, WardenResponseSchema, WardenStatusResponse, WardenStatusResponseSchema } from './wardenTypes';
 
 /**
  * Fetch the Warden's for-carlos queue (Hearth — P1 knock-cards).
@@ -38,6 +38,45 @@ export async function getWarden(
         if (!parsed.success) {
             console.error('Failed to parse warden response:', parsed.error);
             return { stale: true, items: [] };
+        }
+
+        return parsed.data;
+    });
+}
+
+/**
+ * Fetch the Warden's own heartbeat (PR-30 Slice 1 — the honest-death pip's source).
+ *
+ * Thin passthrough of GET /v1/warden/status. `stale` here only means "the file was
+ * unreadable" (server-side IO/parse failure) — it is NOT a freshness verdict. The
+ * pip's age judgment (green/greying/grey-dead) is computed by the CALLER against
+ * `ts` on the client's own clock; this function never decides liveness, only fetches
+ * the raw reading. Defensive like getWarden: a non-OK status or unparseable body
+ * returns a stale-empty result rather than throwing.
+ */
+export async function getWardenStatus(
+    credentials: AuthCredentials
+): Promise<WardenStatusResponse> {
+    const API_ENDPOINT = getServerUrl();
+
+    return await backoff(async () => {
+        const response = await fetch(`${API_ENDPOINT}/v1/warden/status`, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${credentials.token}`,
+                'X-Happy-Client': getHappyClientId(),
+            }
+        });
+
+        if (!response.ok) {
+            return { stale: true, ts: null, overall: null, checks: null };
+        }
+
+        const data = await response.json();
+        const parsed = WardenStatusResponseSchema.safeParse(data);
+        if (!parsed.success) {
+            console.error('Failed to parse warden status response:', parsed.error);
+            return { stale: true, ts: null, overall: null, checks: null };
         }
 
         return parsed.data;

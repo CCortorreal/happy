@@ -517,6 +517,10 @@ export const zhHant: TranslationStructure = {
         acknowledged: ({ to }: { to: string }) => `已收到 — 已傳送給 ${to}`,
         recommends: ({ name, choice }: { name: string; choice: string }) => `${name} 傾向於 ${choice}`,
         feedUnreachable: '無法連線 Warden — 回覆將無法傳送',
+        pipFresh: 'Warden 醒著',
+        pipStale: 'Warden 正在變得安靜',
+        pipDead: ({ time }: { time: string }) => `Warden 已經安靜下來 — 最後一次活動 ${time}`,
+        pipUnknown: '還沒有 Warden 的消息',
     },
 
     sessionsList: {

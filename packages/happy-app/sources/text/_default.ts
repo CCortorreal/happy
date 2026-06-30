@@ -542,6 +542,12 @@ export const en = {
         // masquerades as "all clear". Says the feed is down AND that answers won't send
         // (it's an action surface). Wording is loom's to villager-ize in the i18n pass.
         feedUnreachable: "can’t reach the Warden — answers won’t send",
+        // PR-30 Slice 1 — the honest-death pip. Copy for the four age-bands the pip
+        // computes CLIENT-SIDE off `ts` (never a trusted "healthy" flag from the file).
+        pipFresh: 'the Warden is awake',
+        pipStale: 'the Warden is going quiet',
+        pipDead: ({ time }: { time: string }) => `the Warden went quiet — last seen ${time}`,
+        pipUnknown: 'no word yet from the Warden',
     },
 
     sessionsList: {

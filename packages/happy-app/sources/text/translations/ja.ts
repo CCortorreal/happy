@@ -518,6 +518,10 @@ export const ja: TranslationStructure = {
         acknowledged: ({ to }: { to: string }) => `了解 — ${to} に送信しました`,
         recommends: ({ name, choice }: { name: string; choice: string }) => `${name} は ${choice} を推しています`,
         feedUnreachable: 'Warden に接続できません — 返信は送信されません',
+        pipFresh: 'Warden は起きています',
+        pipStale: 'Warden が静かになりつつあります',
+        pipDead: ({ time }: { time: string }) => `Warden が静かになりました — 最終確認 ${time}`,
+        pipUnknown: 'まだ Warden からの応答がありません',
     },
 
     sessionsList: {

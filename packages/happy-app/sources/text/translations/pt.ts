@@ -516,6 +516,10 @@ export const pt: TranslationStructure = {
         acknowledged: ({ to }: { to: string }) => `Pronto — enviado para ${to}`,
         recommends: ({ name, choice }: { name: string; choice: string }) => `${name} prefere ${choice}`,
         feedUnreachable: 'não foi possível alcançar o Warden — as respostas não serão enviadas',
+        pipFresh: 'o Warden está acordado',
+        pipStale: 'o Warden está ficando quieto',
+        pipDead: ({ time }: { time: string }) => `o Warden ficou quieto — visto pela última vez ${time}`,
+        pipUnknown: 'ainda sem notícias do Warden',
     },
 
     sessionsList: {

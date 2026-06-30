@@ -533,6 +533,10 @@ export const ru: TranslationStructure = {
         acknowledged: ({ to }: { to: string }) => `Готово — отправлено ${to}`,
         recommends: ({ name, choice }: { name: string; choice: string }) => `${name} склоняется к ${choice}`,
         feedUnreachable: 'нет связи с Warden — ответы не отправятся',
+        pipFresh: 'Warden на связи',
+        pipStale: 'Warden затихает',
+        pipDead: ({ time }: { time: string }) => `Warden затих — последний раз на связи ${time}`,
+        pipUnknown: 'пока нет вестей от Warden',
     },
 
     sessionsList: {
