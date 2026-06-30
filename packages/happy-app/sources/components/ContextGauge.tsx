@@ -72,7 +72,10 @@ export function ContextGauge() {
         // organ — we can't tell which from here, so don't assert a cause). Loud, never a fake calm.
         return (
             <View style={styles.container}>
-                <FeedUnreachable message="can’t read the heartbeat right now" />
+                {/* PR-20: minHeight = container's reserved floor (96) minus its own
+                    vertical padding (12+12) — the live<->unreachable swap is a same-
+                    height card, never a jump. */}
+                <FeedUnreachable message="can’t read the heartbeat right now" minHeight={72} />
             </View>
         );
     }

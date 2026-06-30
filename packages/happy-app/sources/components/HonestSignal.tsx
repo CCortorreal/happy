@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { View } from 'react-native';
 import { Text } from '@/components/StyledText';
 import { StyleSheet } from 'react-native-unistyles';
 import { Typography } from '@/constants/Typography';
@@ -16,14 +17,24 @@ import { Typography } from '@/constants/Typography';
 // Lightweight pillar: pure text + a theme token, no render engine, warm-pixel via
 // unistyles. Message-agnostic (the caller supplies the words) so it's i18n-neutral and
 // reusable across gauges.
+//
+// PR-20: optional `minHeight` so the banner can own the SAME reserved height as the
+// gauge card it replaces — not just rely on the caller's outer container matching it.
+// Centers the message in that floor so the dead-state reads calm-but-honest, never a
+// short stub sitting at the top of a tall, mostly-empty card.
 
-export function FeedUnreachable({ message }: { message: string }) {
+export function FeedUnreachable({ message, minHeight }: { message: string; minHeight?: number }) {
     return (
-        <Text style={styles.feedUnreachable} numberOfLines={2}>{message}</Text>
+        <View style={[styles.wrap, minHeight != null && { minHeight, justifyContent: 'center' }]}>
+            <Text style={styles.feedUnreachable} numberOfLines={2}>{message}</Text>
+        </View>
     );
 }
 
 const styles = StyleSheet.create((theme) => ({
+    wrap: {
+        width: '100%',
+    },
     feedUnreachable: {
         fontSize: 12,
         // The destructive TOKEN, not a hardcoded red — honest-dead reads the same
