@@ -8,6 +8,7 @@ import { useWarden } from '@/hooks/useWarden';
 import { WardenItem } from '@/sync/wardenTypes';
 import { answerWarden } from '@/sync/apiWarden';
 import { TokenStorage } from '@/auth/tokenStorage';
+import { useAuth } from '@/auth/AuthContext';
 import { FeedUnreachable } from '@/components/HonestSignal';
 
 // Cockpit v2 — STAGED card-STATE render (the munder "two planes, one renderer"
@@ -47,11 +48,13 @@ function firstLine(q: string): string {
     return lines[0] ?? (q ?? '').trim();
 }
 
-function V2Card({ item, all, optimistic, onAnswer }: {
+function V2Card({ item, all, optimistic, errored, onAnswer, onReauth }: {
     item: WardenItem;
     all: WardenItem[];
     optimistic?: string;
+    errored?: 'auth' | 'send';
     onAnswer: (id: string, text: string) => void;
+    onReauth: () => void;
 }) {
     const { theme } = useUnistyles();
     const [draft, setDraft] = React.useState('');
@@ -106,6 +109,18 @@ function V2Card({ item, all, optimistic, onAnswer }: {
                             <Text style={styles.btnDeclineText}>Not now</Text>
                         </Pressable>
                     </View>
+
+                    {/* Honesty-spine: a failed send NEVER reverts silently. A dead
+                        token can't be retried — one tap re-auths (clears creds +
+                        reloads to sign-in). A transport blip CAN be retried. The
+                        draft above is never cleared, so nothing typed is lost. */}
+                    {errored === 'auth' ? (
+                        <Pressable onPress={onReauth} hitSlop={6}>
+                            <Text style={styles.reauthLink}>Session expired — sign in again to send</Text>
+                        </Pressable>
+                    ) : errored ? (
+                        <Text style={styles.errorLine}>Couldn’t send — retry</Text>
+                    ) : null}
                 </View>
             )}
         </View>
@@ -114,16 +129,24 @@ function V2Card({ item, all, optimistic, onAnswer }: {
 
 export default function CockpitV2() {
     const { items, unreachable } = useWarden();
+    const { logout } = useAuth();   // one-tap re-auth on a dead-token card (clears creds + reloads to login)
     // Optimistic answers (id -> text); reconciled by the next poll. The card stays
     // rendered in place while optimistic, so there's no scroll-yank on answer.
     const [overlay, setOverlay] = React.useState<Record<string, string>>({});
+    // Error TYPE per card: 'auth' = stale token (re-auth, retry is futile) vs 'send'
+    // = transport failure (retry can help). Honest-actionable, not just honest.
+    const [errors, setErrors] = React.useState<Record<string, 'auth' | 'send'>>({});
 
     const onAnswer = React.useCallback(async (id: string, text: string) => {
         setOverlay((o) => ({ ...o, [id]: text }));
+        setErrors((e) => { const n = { ...e }; delete n[id]; return n; });   // clear stale error on re-attempt
         const creds = await TokenStorage.getCredentials();
         const res = creds ? await answerWarden(creds, id, text) : { ok: false, authExpired: false };
         if (!res.ok) {
+            // Revert the optimistic settle, but NEVER silently: surface WHY. The
+            // draft is still in the card (never cleared), so nothing typed is lost.
             setOverlay((o) => { const n = { ...o }; delete n[id]; return n; });
+            setErrors((e) => ({ ...e, [id]: res.authExpired ? 'auth' : 'send' }));
         }
     }, []);
 
@@ -161,7 +184,9 @@ export default function CockpitV2() {
                             item={item}
                             all={items}
                             optimistic={overlay[item.id]}
+                            errored={errors[item.id]}
                             onAnswer={onAnswer}
+                            onReauth={logout}
                         />
                     ))
                 )}
@@ -249,6 +274,22 @@ const styles = StyleSheet.create((theme) => ({
         color: theme.colors.textSecondary,
         marginTop: 8,
         fontStyle: 'italic',
+        ...Typography.default(),
+    },
+    // One-tap re-auth affordance — reads as an actionable link (accent), not a
+    // passive error, so the dead-token recovery is a single tap.
+    reauthLink: {
+        fontSize: 12,
+        color: ACCENT_GATE,
+        marginTop: 8,
+        textDecorationLine: 'underline',
+        ...Typography.default('semiBold'),
+    },
+    // Transport failure — honest + retryable; the draft above is preserved.
+    errorLine: {
+        fontSize: 12,
+        color: ACCENT_GATE,
+        marginTop: 8,
         ...Typography.default(),
     },
     replyArea: {
