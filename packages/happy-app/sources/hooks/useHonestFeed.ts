@@ -1,4 +1,9 @@
 import * as React from 'react';
+// es6 variant: feeds may carry Map/Set/Date payloads (e.g. useCongressRoster's
+// `sessions: Map<...>`) — the base export compares those by own-enumerable-keys
+// only (two distinct Maps both read as "no keys" -> false-equal), which would
+// mask a real change. es6 walks Map/Set entries correctly; same package, no new dep.
+import equal from 'fast-deep-equal/es6';
 import { TokenStorage, AuthCredentials } from '@/auth/tokenStorage';
 
 // useHonestFeed — the Hearth's #0 invariant made shared (the cross-pillar render
@@ -99,7 +104,21 @@ export function useHonestFeed<T>(
                     if (mounted && !res.stale) {
                         // Authoritative fresh read (content OR a genuine empty) -> adopt.
                         failures.current = 0;
-                        setState({ data: res.data, unreachable: false });
+                        setState((prev) => {
+                            // PR-22 de-flicker: a poll that is semantically identical to the
+                            // last-good payload keeps the PRIOR object reference instead of
+                            // adopting the new one. This is a reference-stability optimization
+                            // ONLY — the comparison is deep-equal, so a genuine change (any
+                            // actual value difference) always adopts immediately, same as
+                            // before. It exists so a `useMemo` downstream (e.g. useVram) that
+                            // depends on `data` doesn't recompute every 5s for zero semantic
+                            // change; it must never mask a real change (would violate the
+                            // honesty-spine this hook exists to enforce).
+                            if (!prev.unreachable && equal(prev.data, res.data)) {
+                                return prev;
+                            }
+                            return { data: res.data, unreachable: false };
+                        });
                     } else if (mounted) {
                         markFailure();
                     }
