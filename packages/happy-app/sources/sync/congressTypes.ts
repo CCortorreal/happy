@@ -60,10 +60,10 @@ export const CongressSeatSchema = z.object({
     // thought-line; `health` drives the tile color + causes; `bottleneck` the glyph.
     health: CongressHealthSchema.nullish(),
     bottleneck: CongressBottleneckSchema.nullish(),
-    lastText: z.string().nullish(),  // raw latest-assistant-turn signal (oracle); voiced client-side
+    lastAssistantText: z.string().nullish(),  // raw latest-assistant-turn signal (oracle); voiced client-side
     // Fail-closed identity fence: the oracle sets this true when >1 session seat
     // shares one claudeSid (the spawn-stamp collision) and NULLS their transcript-
-    // derived fields (contextFill/lastText). true -> render 'identity unverified'
+    // derived fields (contextFill/lastAssistantText). true -> render 'identity unverified'
     // (grey, no fill bar, no thought) instead of one seat's numbers on many tiles.
     joinCollision: z.boolean().nullish(),
 });

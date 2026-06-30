@@ -60,6 +60,7 @@ const WardenItemSchema = z.object({
     superseded_by: z.string().nullish(),
     withdraw_reason: z.string().nullish(),
     supersedes: z.string().nullish(),   // forward pointer on the LIVE winner card
+    dependsOn: z.array(z.string()).nullish(),   // cascade edges (cards this is blocked on)
 });
 
 const ForCarlosFileSchema = z.object({
@@ -143,6 +144,7 @@ export function wardenRoutes(app: Fastify) {
                         superseded_by: z.string().nullable(),
                         withdraw_reason: z.string().nullable(),
                         supersedes: z.string().nullable(),
+                        dependsOn: z.array(z.string()).nullable(),
                     })),
                 })
             }
@@ -175,6 +177,7 @@ export function wardenRoutes(app: Fastify) {
                 superseded_by: i.superseded_by ?? null,
                 withdraw_reason: i.withdraw_reason ?? null,
                 supersedes: i.supersedes ?? null,
+                dependsOn: i.dependsOn ?? null,
             })),
         });
     });

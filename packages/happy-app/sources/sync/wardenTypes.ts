@@ -50,6 +50,9 @@ export const WardenItemSchema = z.object({
     superseded_by: z.string().nullish(),
     withdraw_reason: z.string().nullish(),
     supersedes: z.string().nullish(),
+    // Cascade edge: card ids this ask is BLOCKED ON. The staged card-model render
+    // derives 'BLOCKING N downstream' per gate from these. Dark-safe, defaults absent.
+    dependsOn: z.array(z.string()).nullish(),
 });
 
 export const WardenResponseSchema = z.object({
