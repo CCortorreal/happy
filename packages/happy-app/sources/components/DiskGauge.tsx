@@ -55,7 +55,10 @@ export function DiskGauge() {
     if (unreachable) {
         return (
             <View style={styles.container}>
-                <FeedUnreachable message="can’t read disk right now" />
+                {/* PR-20: minHeight = container's reserved floor (96) minus its own
+                    vertical padding (12+12) — the live<->unreachable swap is a same-
+                    height card, never a jump. */}
+                <FeedUnreachable message="can’t read disk right now" minHeight={72} />
             </View>
         );
     }

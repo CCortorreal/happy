@@ -42,7 +42,10 @@ export function VramGauge() {
         // fake-fresh "0GB used". String stays plain pending loom's i18n pass.
         return (
             <View style={styles.container}>
-                <FeedUnreachable message="can’t read the GPU right now" />
+                {/* PR-20: minHeight = container's reserved floor (180) minus its own
+                    vertical padding (12+12) — the live<->unreachable swap is a same-
+                    height card, never a jump. */}
+                <FeedUnreachable message="can’t read the GPU right now" minHeight={156} />
             </View>
         );
     }
