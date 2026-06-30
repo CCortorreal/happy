@@ -27,6 +27,16 @@ const AMBER = '#FF9500';
 const RED = '#E5484D';
 const RAZOR_THIN_MB = 2048;   // < ~2GB headroom = fits-but-barely (amber, not green)
 
+// PR-23: consumer-list stability. Two churn sources, two fixes:
+//  - STABLE_CONSUMER_MB_FLOOR drops sub-threshold transient procs (csrss, etc.)
+//    BEFORE the top-N cut, so a process flickering around a few MB never crosses
+//    the visible-list boundary poll-to-poll.
+//  - MAX_CONSUMER_ROWS stays a fixed cap; overflow beyond it is summarized in an
+//    honest "+N more (~XGB)" line rather than silently dropped (leanness bar:
+//    stable row count, never dishonest hiding).
+const STABLE_CONSUMER_MB_FLOOR = 64;  // below this, a consumer doesn't even compete for a row
+const MAX_CONSUMER_ROWS = 6;
+
 function pressureColor(usedFrac: number): string {
     if (usedFrac >= 0.9) return RED;
     if (usedFrac >= 0.75) return AMBER;
@@ -92,7 +102,14 @@ export function VramGauge() {
         }
     }
 
-    const consumers = [...view.consumers].sort((a, b) => b.vramMB - a.vramMB).slice(0, 6);
+    // Stable list: drop sub-floor transients first (kills flicker-driven row-count
+    // churn), THEN cut to the fixed row cap. Anything still over the cap is summed
+    // into an honest "+N more" — never silently dropped.
+    const sortedConsumers = [...view.consumers].sort((a, b) => b.vramMB - a.vramMB);
+    const stableConsumers = sortedConsumers.filter((c) => c.vramMB >= STABLE_CONSUMER_MB_FLOOR);
+    const consumers = stableConsumers.slice(0, MAX_CONSUMER_ROWS);
+    const overflow = stableConsumers.slice(MAX_CONSUMER_ROWS);
+    const overflowMB = overflow.reduce((sum, c) => sum + c.vramMB, 0);
 
     // VRAM-pressure trend — the MONITOR law is level + RATE + ETA (loom; the disk-
     // sentinel's etaToActDays set the precedent). Rising adds time-to-impact
@@ -151,6 +168,12 @@ export function VramGauge() {
                     <Text style={styles.consumerMB}>{gb(c.vramMB)}</Text>
                 </View>
             ))}
+
+            {overflow.length > 0 ? (
+                <Text style={styles.consumerOverflow} numberOfLines={1}>
+                    +{overflow.length} more · {gb(overflowMB)}
+                </Text>
+            ) : null}
 
             {/* level + RATE + ETA — honest-null while warming / on a flat trend. */}
             {trend ? (
@@ -252,6 +275,12 @@ const styles = StyleSheet.create((theme) => ({
         fontSize: 12,
         color: theme.colors.textSecondary,
         ...Typography.default('semiBold'),
+    },
+    consumerOverflow: {
+        fontSize: 11,
+        color: theme.colors.textSecondary,
+        marginTop: 6,
+        ...Typography.default(),
     },
     reclaimable: {
         fontSize: 12,
