@@ -645,25 +645,56 @@ function congressHealthStatus(seat: CongressSeat): { color: string; dotColor: st
 // (loom's call; revisit with her once it lights up). Honest-staleness: a lane
 // that isn't liveness-fresh never shows a present-tense "thought" — it reads
 // "(quiet — last: …)", greyed, never a frozen-fresh lie.
+// A thought older than this reads stale (amber/idle) — idle != busy, enforced at
+// the voice layer so a lane that said something an hour ago never looks busy now.
+const THOUGHT_STALE_MS = 3 * 60 * 1000;
+
+// R1 specificity: distill a raw assistant turn into a short thought — the first
+// concrete clause, capped at ~10 words. Never a bare gerund / slug-echo. (v0
+// heuristic; loom owns richer distillation + the final voice.)
+function distillThought(raw: string): string {
+    const text = raw.trim().replace(/\s+/g, ' ');
+    const firstClause = text.split(/(?<=[.!?])\s|\s—\s|:\s/)[0] ?? text;
+    const words = firstClause.split(' ');
+    return words.length > 10 ? `${words.slice(0, 10).join(' ')}…` : firstClause;
+}
+
+// voiceThought (loom's spec, R1–R4). The thought-line is DERIVED from the oracle's
+// raw signals, never an asserted phrase that can drift stale-and-lying:
+//   R1 distill lastAssistantText -> a specific short thought;
+//   R2 staleness: age the thought off its ts — a stale/idle lane reads quiet, not busy;
+//   R3 privacy fence: voice raw text ONLY when renderSafe===true (fail-closed);
+//   R4 ladder: currentWork(fresh) > distilled-safe-text(fresh) > dim slug/role.
 function voiceThought(seat: CongressSeat): { text: string; stale: boolean } {
     // Fail-closed identity fence (#0): a collided seat's transcript may be a foreign
-    // lane's — never voice a thought we can't attribute. 'identity unverified',
-    // greyed, until the impostor re-registers and the oracle clears the collision.
+    // lane's — never voice a thought we can't attribute.
     if (seat.joinCollision) return { text: 'identity unverified', stale: true };
+
     const alive = seat.verdict.trim().toUpperCase() === 'ALIVE';
-    const work = seat.currentWork?.trim();
-    // Humanize the pedal slug for warmth: 'cortorreal-writing-grounding' ->
-    // 'cortorreal writing grounding' (loom's voice tune). currentWork is already
-    // prose, so only the pedal fallback needs it.
-    const pedal = seat.pedal?.trim().replace(/-/g, ' ');
-    const raw = work || (pedal ? `on ${pedal}` : null) || seat.role?.trim() || null;
-    // NOTE: the connective words here ('on', 'quiet — last:', 'idle') are plain
-    // strings pending loom's queued i18n pass (the dynamic content — currentWork/
-    // pedal — is runtime data, not translatable). Dark until the oracle emits.
+    const work = seat.currentWork?.trim() || null;
+    // R3: only distill when the oracle says it's render-safe (fail-closed: false/absent => redact).
+    const safeText = (seat.renderSafe === true && seat.lastAssistantText)
+        ? distillThought(seat.lastAssistantText)
+        : null;
+    // R2: how old is the assistant turn?
+    const ageMs = seat.lastTextTs != null ? Date.now() - seat.lastTextTs : null;
+    const freshText = ageMs != null && ageMs < THOUGHT_STALE_MS;
+    const ageMin = ageMs != null ? Math.max(1, Math.round(ageMs / 60000)) : null;
+    const slug = seat.pedal?.trim() ? `on ${seat.pedal.trim().replace(/-/g, ' ')}` : (seat.role?.trim() || null);
+
+    // Not alive -> quiet, never a present-tense thought.
     if (!alive) {
-        return { text: raw ? `quiet — last: ${raw}` : 'quiet', stale: true };
+        const last = work || safeText || slug;
+        return { text: last ? `quiet — last: ${last}` : 'quiet', stale: true };
     }
-    return { text: raw ?? 'idle', stale: false };
+    // R4 ladder (alive): a deliberate currentWork phrase wins; else a fresh safe distill.
+    if (work) return { text: work, stale: !freshText };
+    if (safeText && freshText) return { text: safeText, stale: false };
+    if (safeText) return { text: ageMin ? `${safeText} · ${ageMin}m ago` : safeText, stale: true };
+    // No voiceable signal. If we know the turn age, say idle honestly; else the
+    // dim slug fallback (tentative — a non-signal, rendered stale so it reads dim).
+    if (ageMin != null) return { text: `idle ~${ageMin}m`, stale: true };
+    return { text: slug ?? 'idle', stale: true };
 }
 
 // Phase 1→2 (bounded cut): the OVERSEE context-pressure cue. contextFill (tokens)

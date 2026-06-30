@@ -61,6 +61,8 @@ export const CongressSeatSchema = z.object({
     health: CongressHealthSchema.nullish(),
     bottleneck: CongressBottleneckSchema.nullish(),
     lastAssistantText: z.string().nullish(),  // raw latest-assistant-turn signal (oracle); voiced client-side
+    lastTextTs: z.number().nullish(),         // R2: assistant-turn ts (epoch ms) — staleness fence for the thought
+    renderSafe: z.boolean().nullish(),        // R3: privacy gate — voice raw text ONLY when true (fail-closed)
     // Fail-closed identity fence: the oracle sets this true when >1 session seat
     // shares one claudeSid (the spawn-stamp collision) and NULLS their transcript-
     // derived fields (contextFill/lastAssistantText). true -> render 'identity unverified'

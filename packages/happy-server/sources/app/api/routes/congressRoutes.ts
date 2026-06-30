@@ -72,6 +72,12 @@ const CongressSeatSchema = z.object({
     // lastAssistantText) is nulled for all of them and this is set true, so the cockpit
     // renders 'identity unverified' instead of one seat's number on many tiles.
     lastAssistantText: z.string().nullish(),
+    // ts = the assistant-turn timestamp for lastAssistantText (oracle emits ISO).
+    // Drives R2 honest-staleness in the thought-line (age/grey a stale thought).
+    ts: z.union([z.string(), z.number()]).nullish(),
+    // renderSafe = the oracle's allowlist-derived privacy gate. Render raw
+    // lastAssistantText ONLY when true; absent/false => redact (fail-closed).
+    renderSafe: z.boolean().nullish(),
     joinCollision: z.boolean().nullish(),
 });
 
@@ -175,6 +181,8 @@ export function congressRoutes(app: Fastify) {
                             approximate: z.boolean().nullable(),
                         }).nullable(),
                         lastAssistantText: z.string().nullable(),
+                        lastTextTs: z.number().nullable(),
+                        renderSafe: z.boolean().nullable(),
                         joinCollision: z.boolean().nullable(),
                     })),
                 })
@@ -218,6 +226,8 @@ export function congressRoutes(app: Fastify) {
                     ? { direction: s.bottleneck.direction, approximate: s.bottleneck.approximate ?? null }
                     : null,
                 lastAssistantText: s.lastAssistantText ?? null,
+                lastTextTs: normalizeTs(s.ts),
+                renderSafe: s.renderSafe ?? null,
                 joinCollision: s.joinCollision ?? null,
             })),
         });
