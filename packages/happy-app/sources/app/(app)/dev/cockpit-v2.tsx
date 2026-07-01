@@ -222,6 +222,112 @@ function seatFor(s: SessionRowData, roster: Map<string, CongressSeat>): Congress
     return (s.claudeSessionId != null ? roster.get(s.claudeSessionId) : undefined) ?? roster.get(s.id);
 }
 
+// ----------------------------------------------------------------------------
+// GOD -> WORKER FAN-OUT (mirrors the munder building's FloorTile: god on top,
+// its worker roster underneath). The roster (GET /v1/congress/roster) already
+// separates session rows from worker rows (kind==='worker', no cuid — a worker
+// is watched, not conversable, so it never JOINs onto a session the way a
+// god/session lane does). There is NO clean parent-lane linkage field for a
+// worker in CongressSeatSchema today (grepped — no laneId/parentSeat/ownerCuid
+// exists), so grouping falls back to the best available signal: host+pedal
+// proximity to the candidate god lane's own seat. This is an INFERRED grouping,
+// not a proven one — marked honestly (§0: no faked hierarchy) rather than
+// silently presented as a hard parent/child link.
+function workerGroupKey(w: CongressSeat): string | null {
+    const host = w.host?.trim();
+    const pedal = w.pedal?.trim();
+    if (host && pedal) return `${host}::${pedal}`;
+    return null;
+}
+
+function laneGroupKey(seat: CongressSeat | undefined): string | null {
+    if (!seat) return null;
+    const host = seat.host?.trim();
+    const pedal = seat.pedal?.trim();
+    if (host && pedal) return `${host}::${pedal}`;
+    return null;
+}
+
+// Groups every worker row under the god lane sharing its host+pedal signal.
+// Workers with no matching lane (no signal, or the signal matches no lane on
+// screen) land in a separate "ungrouped" bucket — rendered honestly as its own
+// row, never smuggled under a lane it wasn't actually inferred to belong to.
+function groupWorkersByLane(lanes: LaneRow[], workers: CongressSeat[]): {
+    byLane: Map<string, CongressSeat[]>;
+    ungrouped: CongressSeat[];
+} {
+    const laneKeys = new Map<string, string>(); // groupKey -> session.id
+    for (const row of lanes) {
+        const key = laneGroupKey(row.seat);
+        if (key && !laneKeys.has(key)) laneKeys.set(key, row.session.id);
+    }
+    const byLane = new Map<string, CongressSeat[]>();
+    const ungrouped: CongressSeat[] = [];
+    for (const w of workers) {
+        const key = workerGroupKey(w);
+        const sessionId = key ? laneKeys.get(key) : undefined;
+        if (sessionId) {
+            const list = byLane.get(sessionId) ?? [];
+            list.push(w);
+            byLane.set(sessionId, list);
+        } else {
+            ungrouped.push(w);
+        }
+    }
+    return { byLane, ungrouped };
+}
+
+const WORKER_AVATAR_SHOWN = 8;
+
+// One worker avatar — mirrors FloorTile's roster button: face + a small status
+// dot, honest per-worker state via the SAME deriveLiveness the lane dot uses
+// (never a separate hard-coded green for workers).
+function WorkerAvatar({ worker, rosterUnreachable }: { worker: CongressSeat; rosterUnreachable: boolean }) {
+    const { verdict } = deriveLiveness(worker, rosterUnreachable);
+    const color = verdict === 'alive' ? GREEN : verdict === 'wedged' ? AMBER : verdict === 'dead' ? RED : GREY;
+    const label = worker.currentWork?.trim() || worker.model?.trim() || worker.role?.trim() || worker.seat;
+    return (
+        <View style={styles.workerAvatarWrap}>
+            <Avatar id={worker.seat} size={26} monochrome={verdict !== 'alive'} />
+            <StatusDot color={color} isPulsing={verdict === 'alive'} size={7} style={styles.workerDot} />
+            <Text style={styles.workerLabel} numberOfLines={1}>{label}</Text>
+        </View>
+    );
+}
+
+// The worker roster strip under a god lane — up to WORKER_AVATAR_SHOWN shown,
+// '+N more' beyond that (the munder FloorTile pattern). `inferred` marks a
+// group whose linkage came from the host+pedal fallback signal (always true
+// today — there is no stronger linkage field yet) so the UI never claims a
+// hierarchy stronger than what was actually derived.
+function WorkerFanout({ workers, rosterUnreachable, inferred }: {
+    workers: CongressSeat[];
+    rosterUnreachable: boolean;
+    inferred: boolean;
+}) {
+    if (workers.length === 0) return null;
+    const shown = workers.slice(0, WORKER_AVATAR_SHOWN);
+    const overflow = workers.length - shown.length;
+    return (
+        <View style={styles.workerFanout}>
+            <View style={styles.workerFanoutHeaderRow}>
+                <Text style={styles.workerFanoutTitle}>
+                    workers · {workers.length}
+                </Text>
+                {inferred ? (
+                    <Text style={styles.workerFanoutInferred}>grouped by host+pedal — inferred, not a proven link</Text>
+                ) : null}
+            </View>
+            <View style={styles.workerRoster}>
+                {shown.map((w, i) => (
+                    <WorkerAvatar key={`${w.seat}-${i}`} worker={w} rosterUnreachable={rosterUnreachable} />
+                ))}
+                {overflow > 0 ? <Text style={styles.workerMore}>+{overflow} more</Text> : null}
+            </View>
+        </View>
+    );
+}
+
 // Fail-honest state mapped onto the four-state vocabulary the spec names —
 // idle / working / blocked / done — derived from the SAME reconciled liveness +
 // health verdict the live tile paints, never a separate hard-coded read.
@@ -248,10 +354,13 @@ function laneHonestState(seat: CongressSeat | undefined, rosterUnreachable: bool
     return { label: 'working', color: GREEN };
 }
 
-function LaneTile({ row, rosterUnreachable, selected }: {
+function LaneTile({ row, rosterUnreachable, selected, workers }: {
     row: LaneRow;
     rosterUnreachable: boolean;
     selected: boolean;
+    // This lane's fanned-out worker roster (host+pedal-inferred grouping — see
+    // groupWorkersByLane). Empty when the lane has no god->worker fan-out today.
+    workers: CongressSeat[];
 }) {
     const { theme } = useUnistyles();
     const navigateToSession = useNavigateToSession();
@@ -320,13 +429,17 @@ function LaneTile({ row, rosterUnreachable, selected }: {
                     )}
                 </View>
             ) : null}
+
+            {/* GOD -> WORKER fan-out — always visible when this lane has fanned-out
+                workers (mirrors FloorTile: the roster is not gated behind expand). */}
+            <WorkerFanout workers={workers} rosterUnreachable={rosterUnreachable} inferred />
         </Pressable>
     );
 }
 
 function TheWorkPlane({ selectedSessionId }: { selectedSessionId?: string }) {
     const data = useVisibleSessionListViewData();
-    const { sessions: roster, unreachable: rosterUnreachable } = useCongressRoster();
+    const { sessions: roster, workers, unreachable: rosterUnreachable } = useCongressRoster();
 
     // Flatten the view-model to a plain lane list — THE WORK is the living center,
     // not a list buried under a gauge, so Slice 1 renders every lane as an equal tile
@@ -340,6 +453,15 @@ function TheWorkPlane({ selectedSessionId }: { selectedSessionId?: string }) {
         }
         return rows.map((session) => ({ session, seat: seatFor(session, roster) }));
     }, [data, roster]);
+
+    // GOD -> WORKER fan-out: group the already-served worker rows under their
+    // best-signal parent lane (host+pedal proximity — see groupWorkersByLane).
+    // Any worker with no matching lane on screen renders in its own honest
+    // "ungrouped" bucket rather than being hidden or force-fit under a lane.
+    const { byLane: workersByLane, ungrouped: ungroupedWorkers } = React.useMemo(
+        () => groupWorkersByLane(lanes, workers),
+        [lanes, workers],
+    );
 
     if (!data) {
         // First paint, no data yet — quiet, never a fake board.
@@ -369,8 +491,24 @@ function TheWorkPlane({ selectedSessionId }: { selectedSessionId?: string }) {
                     row={row}
                     rosterUnreachable={rosterUnreachable}
                     selected={row.session.id === selectedSessionId}
+                    workers={workersByLane.get(row.session.id) ?? []}
                 />
             ))}
+            {ungroupedWorkers.length > 0 ? (
+                <View style={styles.ungroupedWorkersBlock}>
+                    <Text style={styles.workerFanoutInferred}>
+                        {ungroupedWorkers.length} worker{ungroupedWorkers.length === 1 ? '' : 's'} with no host+pedal match to a lane on screen — shown unassigned rather than guessed into a lane
+                    </Text>
+                    <View style={styles.workerRoster}>
+                        {ungroupedWorkers.slice(0, WORKER_AVATAR_SHOWN).map((w, i) => (
+                            <WorkerAvatar key={`${w.seat}-${i}`} worker={w} rosterUnreachable={rosterUnreachable} />
+                        ))}
+                        {ungroupedWorkers.length > WORKER_AVATAR_SHOWN ? (
+                            <Text style={styles.workerMore}>+{ungroupedWorkers.length - WORKER_AVATAR_SHOWN} more</Text>
+                        ) : null}
+                    </View>
+                </View>
+            ) : null}
         </View>
     );
 }
@@ -718,6 +856,69 @@ const styles = StyleSheet.create((theme) => ({
         color: theme.colors.textSecondary,
         fontStyle: 'italic',
         ...Typography.default(),
+    },
+
+    // --- GOD -> WORKER fan-out (munder FloorTile pattern: god + worker roster) ---
+    workerFanout: {
+        marginTop: 10,
+        paddingTop: 10,
+        borderTopWidth: StyleSheet.hairlineWidth,
+        borderTopColor: theme.colors.divider,
+    },
+    workerFanoutHeaderRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginBottom: 6,
+    },
+    workerFanoutTitle: {
+        fontSize: 11,
+        color: theme.colors.textSecondary,
+        textTransform: 'uppercase',
+        letterSpacing: 0.4,
+        ...Typography.default('semiBold'),
+    },
+    workerFanoutInferred: {
+        flex: 1,
+        fontSize: 10,
+        color: theme.colors.textSecondary,
+        fontStyle: 'italic',
+        ...Typography.default(),
+    },
+    workerRoster: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        alignItems: 'center',
+        gap: 8,
+    },
+    workerAvatarWrap: {
+        alignItems: 'center',
+        width: 52,
+    },
+    workerDot: {
+        marginTop: -8,
+        marginLeft: 18,
+    },
+    workerLabel: {
+        fontSize: 9.5,
+        color: theme.colors.textSecondary,
+        textAlign: 'center',
+        marginTop: 2,
+        ...Typography.default(),
+    },
+    workerMore: {
+        fontSize: 12,
+        color: theme.colors.textSecondary,
+        alignSelf: 'center',
+        ...Typography.default('semiBold'),
+    },
+    ungroupedWorkersBlock: {
+        marginTop: 4,
+        marginBottom: 8,
+        paddingVertical: 10,
+        paddingHorizontal: 14,
+        backgroundColor: theme.colors.surface,
+        borderRadius: 12,
     },
 
     // --- VITALS strip ---
