@@ -13,10 +13,16 @@
  *      suppressed via tauri.nobefore.conf.json) so the verified bundle ships.
  *
  * URL: EXPO_PUBLIC_HAPPY_SERVER_URL env, else the self-host mesh default.
+ *
+ * Multi-config: Tauri 2 merges multiple --config flags left-to-right.
+ * On Windows we layer tauri.windows.conf.json on top of tauri.nobefore.conf.json
+ * to apply bundle.targets=["nsis"] and decorations:true (drops the macOS
+ * overlay titlebar that doesn't exist on Windows).
  */
 import { execSync } from 'node:child_process';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { platform } from 'node:process';
 
 const SERVER_URL = process.env.EXPO_PUBLIC_HAPPY_SERVER_URL || 'http://100.64.0.2:3005';
 const DIST_JS = 'dist/_expo/static/js/web';
@@ -47,5 +53,15 @@ console.log(`\n✓ GUARD: '${host}' is baked into dist.`);
 // read at COMPILE time by option_env! in lib.rs to bake the durable
 // __HAPPY_CONFIG__.serverUrl default (build.rs reruns on change). This is the
 // primary, Metro-cache-immune mechanism; the EXPO_PUBLIC bake above is a backup.
-run('pnpm exec tauri build --config src-tauri/tauri.nobefore.conf.json', { HAPPY_SELFHOST_URL: SERVER_URL });
+//
+// On Windows, layer tauri.windows.conf.json on top to apply:
+//   - bundle.targets: ["nsis"]  — produce an NSIS installer instead of "all"
+//   - app.windows[0].decorations: true  — use native Win32 titlebar (the
+//     macOS titleBarStyle:"Overlay" from the base config is a no-op on Windows
+//     but decorations:true explicitly opts in to native chrome)
+const isWin = platform === 'win32';
+const configFlags = isWin
+    ? '--config src-tauri/tauri.nobefore.conf.json --config src-tauri/tauri.windows.conf.json'
+    : '--config src-tauri/tauri.nobefore.conf.json';
+run(`pnpm exec tauri build ${configFlags}`, { HAPPY_SELFHOST_URL: SERVER_URL });
 console.log('\n✓ Self-host installer built from verified dist.');
