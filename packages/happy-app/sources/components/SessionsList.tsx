@@ -30,6 +30,7 @@ import { FeedUnreachable } from '@/components/HonestSignal';
 import { VramGauge } from './VramGauge';
 import { DiskGauge } from './DiskGauge';
 import { ContextGauge } from './ContextGauge';
+import { BacklogGauge } from './BacklogGauge';
 import { WorkerCard } from './WorkerCard';
 import { t } from '@/text';
 
@@ -543,6 +544,7 @@ export function SessionsList({ previewData, previewRoster, previewWorkers }: Ses
                         <ContextGauge />
                         <VramGauge />
                         <DiskGauge />
+                        <BacklogGauge />
                         <UpdateBanner />
                     </>
                 ) : null}
