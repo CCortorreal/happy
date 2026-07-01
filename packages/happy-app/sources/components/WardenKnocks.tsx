@@ -398,15 +398,31 @@ export function WardenKnocksView({ items, unreachable, query }: { items: WardenI
     // = transport failure (retry can help). Honest-actionable, not just honest.
     const [errors, setErrors] = React.useState<Record<string, 'auth' | 'send'>>({});
     // Answered history is collapsed by default — the active mantel stays clean.
+    // BUT the moment Carlos answers a card THIS session, the fold auto-opens (see
+    // onAnswer) so the card visibly settles into the answered group instead of
+    // vanishing behind a closed fold — a card disappearing into a hidden section
+    // is precisely the "lurch" loom named, not a settle.
     const [historyOpen, setHistoryOpen] = React.useState(false);
     // Withdrawn/superseded cards collapse into their own fold — out of the active
     // mantel (never approvable) but kept for audit/coherence.
     const [withdrawnOpen, setWithdrawnOpen] = React.useState(false);
+    // Landing order for cards answered THIS session (id -> monotonic sequence).
+    // Drives the "newest-answered anchors at the top of the answered group"
+    // behavior — without this, a freshly-answered card falls back into whatever
+    // order `items` happens to carry (usually oldest-first), landing at the
+    // BOTTOM of a long history and reading as if it fell into a void.
+    const landingSeq = React.useRef(0);
+    const [landedAt, setLandedAt] = React.useState<Record<string, number>>({});
 
     const onAnswer = React.useCallback(async (id: string, text: string) => {
         console.log('[card] onAnswer enter', { id, textLen: text.length });
         setErrors((e) => { const n = { ...e }; delete n[id]; return n; });
         setOverlay((o) => ({ ...o, [id]: text }));   // optimistic settle
+        // Anchor: stamp this card's landing order + auto-open the answered fold so
+        // it settles into view right where it lands, in place, rather than the
+        // open-section shrinking around a card that disappears with no trace.
+        setLandedAt((l) => (id in l ? l : { ...l, [id]: landingSeq.current++ }));
+        setHistoryOpen(true);
         const creds = await TokenStorage.getCredentials();
         console.log('[card] onAnswer creds', { hasCreds: !!creds, hasToken: !!creds?.token });
         const res = creds ? await answerWarden(creds, id, text) : { ok: false, authExpired: false };
@@ -417,6 +433,12 @@ export function WardenKnocksView({ items, unreachable, query }: { items: WardenI
             // (retry won't help), a transport blip wants a retry.
             setOverlay((o) => {
                 const next = { ...o };
+                delete next[id];
+                return next;
+            });
+            setLandedAt((l) => {
+                if (!(id in l)) return l;
+                const next = { ...l };
                 delete next[id];
                 return next;
             });
@@ -433,7 +455,20 @@ export function WardenKnocksView({ items, unreachable, query }: { items: WardenI
     const q = query?.trim().toLowerCase();
     const matchesCard = (i: WardenItem) => !q || cardMatchesQuery(i, q);
     const open = items.filter((i) => !isWithdrawn(i) && !isAnswered(i) && matchesCard(i));
-    const answered = items.filter((i) => isAnswered(i) && matchesCard(i));
+    // Newest-answered-this-session floats to the top of the group (most-recent
+    // landing first); everything else (answered before this mount, e.g. via poll
+    // reconciliation) keeps the server's existing order beneath. This is the
+    // "anchor at the top of the answered group" half of the fix.
+    const answered = items
+        .filter((i) => isAnswered(i) && matchesCard(i))
+        .sort((a, b) => {
+            const la = landedAt[a.id];
+            const lb = landedAt[b.id];
+            if (la != null && lb != null) return lb - la;   // both landed this session: newest first
+            if (la != null) return -1;                        // a landed this session, b didn't: a wins
+            if (lb != null) return 1;                         // b landed this session, a didn't: b wins
+            return 0;                                          // neither: preserve server order
+        });
     const withdrawn = items.filter((i) => isWithdrawn(i) && matchesCard(i));
 
     // The absence of a knock IS the all-clear — render (almost) nothing when there's
