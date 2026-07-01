@@ -31,6 +31,27 @@ export const CongressBottleneckSchema = z.object({
     approximate: z.boolean().nullish(),
 });
 
+// Task B (July-7 convergence, munder-building IA parity) — mirrors the server's
+// congressRoutes.ts additions. cardCounts is honest-null today: Happy's
+// seats-oracle has no work-item/tasks feed (only a message-queue `backlog`,
+// which is a different signal) — the shape exists so the client can code
+// against it now, and every row serves null until an oracle-side tasks feed
+// lands to back it. tailPreview wraps the SAME bounded lastAssistantText
+// signal as a single-entry `lines` array (the oracle emits no multi-line
+// transcript today); honest-null when there's no text.
+export const CongressCardCountsSchema = z.object({
+    todo: z.number().nullable(),
+    doing: z.number().nullable(),
+    blocked: z.number().nullable(),
+    done: z.number().nullable(),
+});
+
+export const CongressTailPreviewSchema = z.object({
+    lines: z.array(z.string()),
+    ts: z.number().nullable(),
+    renderSafe: z.boolean().nullable(),
+});
+
 export const CongressSeatSchema = z.object({
     seat: z.string(),
     // cuid = session.id for session rows (the JOIN key); null for worker rows
@@ -68,6 +89,14 @@ export const CongressSeatSchema = z.object({
     // derived fields (contextFill/lastAssistantText). true -> render 'identity unverified'
     // (grey, no fill bar, no thought) instead of one seat's numbers on many tiles.
     joinCollision: z.boolean().nullish(),
+    // Task B — per-lane work-item breakdown. Honest-null until an oracle-side
+    // tasks feed exists (see schema comment above); never 0-as-fake. `.nullish()`
+    // (not just `.nullable()`) so existing hand-built seat fixtures (e.g.
+    // dev/hearth-preview.tsx) that predate this field stay additive/non-breaking.
+    cardCounts: CongressCardCountsSchema.nullish(),
+    // Task B — bounded live-output preview (see schema comment above). Same
+    // `.nullish()` rationale as cardCounts.
+    tailPreview: CongressTailPreviewSchema.nullish(),
 });
 
 export const CongressRosterResponseSchema = z.object({
@@ -78,5 +107,7 @@ export const CongressRosterResponseSchema = z.object({
 
 export type CongressHealth = z.infer<typeof CongressHealthSchema>;
 export type CongressBottleneck = z.infer<typeof CongressBottleneckSchema>;
+export type CongressCardCounts = z.infer<typeof CongressCardCountsSchema>;
+export type CongressTailPreview = z.infer<typeof CongressTailPreviewSchema>;
 export type CongressSeat = z.infer<typeof CongressSeatSchema>;
 export type CongressRosterResponse = z.infer<typeof CongressRosterResponseSchema>;

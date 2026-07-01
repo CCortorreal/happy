@@ -36,6 +36,41 @@ const CongressBottleneckSchema = z.object({
     approximate: z.boolean().nullish(),
 });
 
+// Task B (July-7 convergence, munder-building IA parity) — the two feeds the
+// cockpit needs to match the building's per-lane tile: a bounded TAIL and a
+// per-lane WORK-COUNTS breakdown.
+//
+// cardCounts: the building's tile reads {todo,doing,blocked,done} off
+// hive/tasks.json via its warden/tasks projection. Happy's seats-oracle has NO
+// equivalent today — grepped seats-oracle.mjs (peer-channel) end to end; it
+// projects roster + a `backlog` block, and backlog is a MESSAGE-QUEUE signal
+// (unacked mailbox count per seat), not a work-item lane breakdown. So this is
+// wired honest-null: the schema/shape exists (additive, dark-safe) so the
+// client can code against it now, but every row serves `cardCounts: null`
+// until an oracle-side tasks feed exists to back it. NEVER 0-as-fake — 0 would
+// claim "zero todos" when the truth is "no feed at all".
+const CongressCardCountsSchema = z.object({
+    todo: z.number().nullish(),
+    doing: z.number().nullish(),
+    blocked: z.number().nullish(),
+    done: z.number().nullish(),
+}).nullish();
+
+// tailPreview: a bounded, honest-ts'd preview of the lane's live output, richer
+// than the single-line lastAssistantText but still sourced from the SAME oracle
+// signal (the oracle emits one whitespace-collapsed <=160-char string per tick,
+// not a streaming multi-line transcript — grepped, no such feed exists). Rather
+// than fabricate lines the oracle doesn't produce, tailPreview wraps that same
+// bounded string as a single-entry `lines` array with its own ts, so the wire
+// contract is ready for a future multi-line oracle emission (additive) without
+// overclaiming one today. Bounded well under 8KB by construction (oracle already
+// caps at 160 chars/line).
+const CongressTailPreviewSchema = z.object({
+    lines: z.array(z.string()),
+    ts: z.union([z.string(), z.number()]).nullable(),
+    renderSafe: z.boolean().nullable(),
+}).nullish();
+
 const CongressSeatSchema = z.object({
     seat: z.string(),
     // JOIN key → session.id for session rows; NULL for worker rows (a worker is
@@ -79,6 +114,12 @@ const CongressSeatSchema = z.object({
     // lastAssistantText ONLY when true; absent/false => redact (fail-closed).
     renderSafe: z.boolean().nullish(),
     joinCollision: z.boolean().nullish(),
+    // Tolerant passthrough slots: the oracle does not emit these YET (see the
+    // schema comments above), but if/when it does, the raw parse already
+    // accepts them under the row's native field names so no schema churn is
+    // needed on that day — only the mapping below has to start reading them.
+    cardCounts: CongressCardCountsSchema,
+    tailPreview: CongressTailPreviewSchema,
 });
 
 // The oracle's native envelope key is `roster` (its name across the whole
@@ -184,6 +225,18 @@ export function congressRoutes(app: Fastify) {
                         lastTextTs: z.number().nullable(),
                         renderSafe: z.boolean().nullable(),
                         joinCollision: z.boolean().nullable(),
+                        // Task B additions (additive, honest-null — see schema comments above).
+                        cardCounts: z.object({
+                            todo: z.number().nullable(),
+                            doing: z.number().nullable(),
+                            blocked: z.number().nullable(),
+                            done: z.number().nullable(),
+                        }).nullable(),
+                        tailPreview: z.object({
+                            lines: z.array(z.string()),
+                            ts: z.number().nullable(),
+                            renderSafe: z.boolean().nullable(),
+                        }).nullable(),
                     })),
                 })
             }
@@ -229,6 +282,35 @@ export function congressRoutes(app: Fastify) {
                 lastTextTs: normalizeTs(s.ts),
                 renderSafe: s.renderSafe ?? null,
                 joinCollision: s.joinCollision ?? null,
+                // cardCounts: honest-null today (no oracle-side tasks feed exists — see
+                // the schema comment). Passed through AS-IS if a future oracle emits it
+                // so the day that feed lands, only the oracle needs to change.
+                cardCounts: s.cardCounts
+                    ? {
+                        todo: s.cardCounts.todo ?? null,
+                        doing: s.cardCounts.doing ?? null,
+                        blocked: s.cardCounts.blocked ?? null,
+                        done: s.cardCounts.done ?? null,
+                    }
+                    : null,
+                // tailPreview: derived from the SAME lastAssistantText/ts/renderSafe signal
+                // the thought-line already voices (bounded to one line — the oracle emits
+                // no multi-line transcript today). Honest-null when there's no text, so the
+                // client never renders an empty-but-present tail box.
+                tailPreview: s.tailPreview
+                    ? {
+                        // Oracle-native tailPreview, if it ever emits one directly (tolerant passthrough).
+                        lines: s.tailPreview.lines,
+                        ts: normalizeTs(s.tailPreview.ts),
+                        renderSafe: s.tailPreview.renderSafe ?? null,
+                    }
+                    : (s.lastAssistantText
+                        ? {
+                            lines: [s.lastAssistantText],
+                            ts: normalizeTs(s.ts),
+                            renderSafe: s.renderSafe ?? null,
+                        }
+                        : null),
             })),
         });
     });
