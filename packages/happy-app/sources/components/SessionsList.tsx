@@ -626,7 +626,7 @@ const HEALTH_AMBER_BELOW = 0.5;
 // produces — never re-read seat.verdict raw here. This is what closes G10/G14 (the
 // online+dead-at-once dot): a killed seat or an unreachable roster poll can no longer
 // render a confident green, because 'online' and 'color' both fall out of one function.
-function congressHealthStatus(seat: CongressSeat, rosterUnreachable: boolean): { color: string; dotColor: string; isPulsing: boolean; isConnected: boolean } {
+export function congressHealthStatus(seat: CongressSeat, rosterUnreachable: boolean): { color: string; dotColor: string; isPulsing: boolean; isConnected: boolean } {
     const mk = (color: string, isConnected: boolean) => ({ color, dotColor: color, isPulsing: false, isConnected });
     const { verdict } = deriveLiveness(seat, rosterUnreachable);
     if (verdict === 'alive') {
@@ -668,7 +668,7 @@ function distillThought(raw: string): string {
 //   R2 staleness: age the thought off its ts — a stale/idle lane reads quiet, not busy;
 //   R3 privacy fence: voice raw text ONLY when renderSafe===true (fail-closed);
 //   R4 ladder: currentWork(fresh) > distilled-safe-text(fresh) > dim slug/role.
-function voiceThought(seat: CongressSeat): { text: string; stale: boolean } {
+export function voiceThought(seat: CongressSeat): { text: string; stale: boolean } {
     // Fail-closed identity fence (#0): a collided seat's transcript may be a foreign
     // lane's — never voice a thought we can't attribute.
     if (seat.joinCollision) return { text: 'identity unverified', stale: true };
@@ -723,7 +723,7 @@ function viewItemMatchesQuery(item: SessionListViewItem, roster: Map<string, Con
 }
 
 const CONTEXT_FIRE_TOKENS = 750_000;
-function contextPressure(seat: CongressSeat): { label: string; color: string } | null {
+export function contextPressure(seat: CongressSeat): { label: string; color: string } | null {
     // Fail-closed: a collided seat's contextFill is another lane's number — don't
     // render a pressure pill we can't attribute (the oracle already nulls it, but
     // guard explicitly so a render-order change can't leak the lie).
