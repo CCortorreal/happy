@@ -82,6 +82,120 @@ const RED = '#E5484D';
 const GREY = '#8E8E93';
 
 // ============================================================================
+// POSTURE-ADAPTIVE DENSITY (Slice 3, spec §3 + §6.3). ONE component set renders
+// at three densities — no per-device fork. `Density` selects a default
+// altitude; every atom below reads it off `useDensity()` and adjusts spacing /
+// type scale / expansion defaults, but the SAME tree renders in all three
+// cases (no `if (density === 'phone') return <PhoneLaneTile/>` fork anywhere).
+//
+// Per spec §3:
+//   - desktop (dense): multiple lanes visible, terminals expandable inline,
+//     vitals a quiet footer row.
+//   - deck (lean-back): between the two — larger touch targets,
+//     controller-reachable, medium density.
+//   - phone (compact): needs-you + one honest line per lane (tap to expand) +
+//     a collapsed vitals dot-row.
+// Capability is posture-INVARIANT: the phone tree is the same NeedsYouCard /
+// LaneTile / VitalsStrip components, just denser defaults — consequential-
+// confirm gates (the NEEDS-YOU reply controls) render identically at every
+// density, never dropped on the small screen.
+// ============================================================================
+
+export type Density = 'desktop' | 'phone' | 'deck';
+
+interface DensityTokens {
+    // Outer rhythm
+    planeGap: number;
+    cardGap: number;
+    cardPaddingV: number;
+    cardPaddingH: number;
+    cardRadius: number;
+    // Type scale (multiplier applied to each style's base fontSize below)
+    typeScale: number;
+    // Touch targets — deck is controller/couch-reachable, wants the biggest hit areas
+    minTouchSize: number;
+    // THE WORK plane: how many lanes get their tail auto-expanded on first
+    // paint. Desktop shows work inline across several lanes at once (spec's
+    // "multiple lanes visible at once, terminals expandable inline"); phone
+    // and deck stay one-honest-line-per-lane until tapped.
+    autoExpandLanes: number;
+    // Lane tile identity/pressure sub-line — desktop has room to keep it
+    // visible at all times; phone/deck still RENDER it (capability-invariant,
+    // never removed) but at compact type scale rather than hidden.
+    laneAvatarSize: number;
+    workerAvatarSize: number;
+    // VITALS: desktop/deck show the label + one-line summary text next to each
+    // dot (a "footer row"); phone collapses to dot + label only, tap still
+    // expands the same full gauge underneath — same data, less text.
+    vitalsShowSummary: boolean;
+}
+
+const DENSITY_TOKENS: Record<Density, DensityTokens> = {
+    desktop: {
+        planeGap: 24,
+        cardGap: 8,
+        cardPaddingV: 12,
+        cardPaddingH: 14,
+        cardRadius: 12,
+        typeScale: 1,
+        minTouchSize: 32,
+        // Desktop inline-expands the top lane by default — "terminals expandable
+        // inline" density (spec §3). Still just a DEFAULT: every lane's chevron
+        // still toggles independently at every posture.
+        autoExpandLanes: 1,
+        laneAvatarSize: 40,
+        workerAvatarSize: 26,
+        vitalsShowSummary: true,
+    },
+    deck: {
+        // Lean-back: between desktop and phone. Bigger touch targets
+        // (controller/couch-reachable), a bit more breathing room, but still
+        // shows summaries — a couch isn't a glance-and-approve context.
+        planeGap: 28,
+        cardGap: 12,
+        cardPaddingV: 16,
+        cardPaddingH: 18,
+        cardRadius: 14,
+        typeScale: 1.12,
+        minTouchSize: 44,
+        autoExpandLanes: 0,
+        laneAvatarSize: 48,
+        workerAvatarSize: 32,
+        vitalsShowSummary: true,
+    },
+    phone: {
+        // Compact: one honest line per lane, tap to expand. Vitals collapse to
+        // a dot-row. Touch targets stay generous (thumb-reachable), even
+        // though the surrounding chrome is the most compact of the three.
+        planeGap: 18,
+        cardGap: 6,
+        cardPaddingV: 10,
+        cardPaddingH: 12,
+        cardRadius: 10,
+        typeScale: 0.92,
+        minTouchSize: 44,
+        autoExpandLanes: 0,
+        laneAvatarSize: 34,
+        workerAvatarSize: 22,
+        vitalsShowSummary: false,
+    },
+};
+
+const DensityContext = React.createContext<Density>('desktop');
+
+function useDensity(): DensityTokens & { density: Density } {
+    const density = React.useContext(DensityContext);
+    return { ...DENSITY_TOKENS[density], density };
+}
+
+// Scales a base fontSize by the active density's type scale — the ONE place
+// every atom below reads to stay a single component set instead of forking
+// per-posture text styles.
+function scaled(base: number, typeScale: number): number {
+    return Math.round(base * typeScale);
+}
+
+// ============================================================================
 // PLANE 1 — NEEDS-YOU (the interrupt). Same predicate the WardenKnocks view uses
 // (open = no answer, not withdrawn) so a lane's gate agrees everywhere it renders.
 // ============================================================================
@@ -108,6 +222,7 @@ function NeedsYouCard({ item, all, optimistic, errored, onAnswer, onReauth }: {
     onReauth: () => void;
 }) {
     const { theme } = useUnistyles();
+    const d = useDensity();
     const [draft, setDraft] = React.useState('');
     const isGate = (item.kind ?? '').toLowerCase() === 'gate';
     const accent = isGate ? ACCENT_GATE : ACCENT_ROUTINE;
@@ -121,27 +236,34 @@ function NeedsYouCard({ item, all, optimistic, errored, onAnswer, onReauth }: {
         onAnswer(item.id, trimmed);
     };
 
+    // Consequential-confirm gate (§0 bright line): the reply controls below are
+    // rendered IDENTICALLY at every density — never dropped or stubbed on the
+    // small screen, only their spacing/type scale changes via `d`.
     return (
-        <View style={[styles.needsYouCard, { borderLeftColor: settled ? GREEN : accent }, settled && styles.needsYouCardSettled]}>
+        <View style={[
+            styles.needsYouCard,
+            { borderLeftColor: settled ? GREEN : accent, borderRadius: d.cardRadius, paddingVertical: d.cardPaddingV, paddingHorizontal: d.cardPaddingH, marginBottom: d.cardGap },
+            settled && styles.needsYouCardSettled,
+        ]}>
             <View style={styles.headerRow}>
-                <Text style={styles.sender} numberOfLines={1}>{item.from}</Text>
+                <Text style={[styles.sender, { fontSize: scaled(12, d.typeScale) }]} numberOfLines={1}>{item.from}</Text>
                 <View style={[styles.kindChip, { backgroundColor: settled ? GREEN : accent }]}>
                     <Text style={styles.kindChipText}>{isGate ? 'GATE' : 'ROUTINE'}</Text>
                 </View>
             </View>
 
-            <Text style={styles.ask} numberOfLines={settled ? 2 : 4}>{firstLine(item.q)}</Text>
+            <Text style={[styles.ask, { fontSize: scaled(15, d.typeScale) }]} numberOfLines={settled ? 2 : 4}>{firstLine(item.q)}</Text>
 
             {blocking > 0 && !settled ? (
-                <Text style={styles.cascade}>⛒ blocking {blocking} downstream {blocking === 1 ? 'task' : 'tasks'}</Text>
+                <Text style={[styles.cascade, { fontSize: scaled(12, d.typeScale) }]}>⛒ blocking {blocking} downstream {blocking === 1 ? 'task' : 'tasks'}</Text>
             ) : null}
 
             {settled ? (
-                <Text style={styles.ack}>✓ Got it — sent to {item.from}</Text>
+                <Text style={[styles.ack, { fontSize: scaled(13, d.typeScale) }]}>✓ Got it — sent to {item.from}</Text>
             ) : (
                 <View style={styles.replyArea}>
                     <TextInput
-                        style={styles.input}
+                        style={[styles.input, { fontSize: scaled(14, d.typeScale), minHeight: d.minTouchSize }]}
                         value={draft}
                         onChangeText={setDraft}
                         placeholder="write back…"
@@ -151,11 +273,11 @@ function NeedsYouCard({ item, all, optimistic, errored, onAnswer, onReauth }: {
                         blurOnSubmit={false}
                     />
                     <View style={styles.replyButtons}>
-                        <Pressable style={[styles.btn, styles.btnAffirm]} onPress={() => submit(draft.trim() ? `Go ahead — ${draft.trim()}` : 'Go ahead')}>
-                            <Text style={styles.btnAffirmText}>Respond &amp; unblock</Text>
+                        <Pressable style={[styles.btn, styles.btnAffirm, { minHeight: d.minTouchSize }]} onPress={() => submit(draft.trim() ? `Go ahead — ${draft.trim()}` : 'Go ahead')}>
+                            <Text style={[styles.btnAffirmText, { fontSize: scaled(13, d.typeScale) }]}>Respond &amp; unblock</Text>
                         </Pressable>
-                        <Pressable style={[styles.btn, styles.btnDecline]} onPress={() => submit('Not now')}>
-                            <Text style={styles.btnDeclineText}>Not now</Text>
+                        <Pressable style={[styles.btn, styles.btnDecline, { minHeight: d.minTouchSize }]} onPress={() => submit('Not now')}>
+                            <Text style={[styles.btnDeclineText, { fontSize: scaled(13, d.typeScale) }]}>Not now</Text>
                         </Pressable>
                     </View>
 
@@ -173,6 +295,7 @@ function NeedsYouCard({ item, all, optimistic, errored, onAnswer, onReauth }: {
 }
 
 function NeedsYouPlane() {
+    const d = useDensity();
     const { items, unreachable } = useWarden();
     const { logout } = useAuth();
     const [overlay, setOverlay] = React.useState<Record<string, string>>({});
@@ -206,21 +329,21 @@ function NeedsYouPlane() {
     if (needsYou.length === 0) {
         if (unreachable) {
             return (
-                <View style={styles.plane}>
+                <View style={[styles.plane, { marginBottom: d.planeGap }]}>
                     <FeedUnreachable message="can't reach the Warden — answers won't send" />
                 </View>
             );
         }
         return (
-            <View style={styles.plane}>
-                <Text style={styles.quietLine}>Nothing needs you right now</Text>
+            <View style={[styles.plane, { marginBottom: d.planeGap }]}>
+                <Text style={[styles.quietLine, { fontSize: scaled(13, d.typeScale) }]}>Nothing needs you right now</Text>
             </View>
         );
     }
 
     return (
-        <View style={styles.plane}>
-            <Text style={styles.planeTitle}>NEEDS YOU{openCount > 0 ? ` · ${openCount}` : ''}</Text>
+        <View style={[styles.plane, { marginBottom: d.planeGap }]}>
+            <Text style={[styles.planeTitle, { fontSize: scaled(13, d.typeScale) }]}>NEEDS YOU{openCount > 0 ? ` · ${openCount}` : ''}</Text>
             {needsYou.map((item) => (
                 <NeedsYouCard
                     key={item.id}
@@ -311,14 +434,15 @@ const WORKER_AVATAR_SHOWN = 8;
 // dot, honest per-worker state via the SAME deriveLiveness the lane dot uses
 // (never a separate hard-coded green for workers).
 function WorkerAvatar({ worker, rosterUnreachable }: { worker: CongressSeat; rosterUnreachable: boolean }) {
+    const d = useDensity();
     const { verdict } = deriveLiveness(worker, rosterUnreachable);
     const color = verdict === 'alive' ? GREEN : verdict === 'wedged' ? AMBER : verdict === 'dead' ? RED : GREY;
     const label = worker.currentWork?.trim() || worker.model?.trim() || worker.role?.trim() || worker.seat;
     return (
-        <View style={styles.workerAvatarWrap}>
-            <Avatar id={worker.seat} size={26} monochrome={verdict !== 'alive'} />
+        <View style={[styles.workerAvatarWrap, { width: d.workerAvatarSize + 26 }]}>
+            <Avatar id={worker.seat} size={d.workerAvatarSize} monochrome={verdict !== 'alive'} />
             <StatusDot color={color} isPulsing={verdict === 'alive'} size={7} style={styles.workerDot} />
-            <Text style={styles.workerLabel} numberOfLines={1}>{label}</Text>
+            <Text style={[styles.workerLabel, { fontSize: scaled(9.5, d.typeScale) }]} numberOfLines={1}>{label}</Text>
         </View>
     );
 }
@@ -333,24 +457,25 @@ function WorkerFanout({ workers, rosterUnreachable, inferred }: {
     rosterUnreachable: boolean;
     inferred: boolean;
 }) {
+    const d = useDensity();
     if (workers.length === 0) return null;
     const shown = workers.slice(0, WORKER_AVATAR_SHOWN);
     const overflow = workers.length - shown.length;
     return (
         <View style={styles.workerFanout}>
             <View style={styles.workerFanoutHeaderRow}>
-                <Text style={styles.workerFanoutTitle}>
+                <Text style={[styles.workerFanoutTitle, { fontSize: scaled(11, d.typeScale) }]}>
                     workers · {workers.length}
                 </Text>
                 {inferred ? (
-                    <Text style={styles.workerFanoutInferred}>grouped by host+pedal — inferred, not a proven link</Text>
+                    <Text style={[styles.workerFanoutInferred, { fontSize: scaled(10, d.typeScale) }]}>grouped by host+pedal — inferred, not a proven link</Text>
                 ) : null}
             </View>
-            <View style={styles.workerRoster}>
+            <View style={[styles.workerRoster, { gap: d.cardGap }]}>
                 {shown.map((w, i) => (
                     <WorkerAvatar key={`${w.seat}-${i}`} worker={w} rosterUnreachable={rosterUnreachable} />
                 ))}
-                {overflow > 0 ? <Text style={styles.workerMore}>+{overflow} more</Text> : null}
+                {overflow > 0 ? <Text style={[styles.workerMore, { fontSize: scaled(12, d.typeScale) }]}>+{overflow} more</Text> : null}
             </View>
         </View>
     );
@@ -386,15 +511,20 @@ function laneHonestState(seat: CongressSeat | undefined, rosterUnreachable: bool
     return { label: 'working', color: GREEN };
 }
 
-function LaneTile({ row, rosterUnreachable, selected, workers }: {
+function LaneTile({ row, rosterUnreachable, selected, workers, laneIndex }: {
     row: LaneRow;
     rosterUnreachable: boolean;
     selected: boolean;
     // This lane's fanned-out worker roster (host+pedal-inferred grouping — see
     // groupWorkersByLane). Empty when the lane has no god->worker fan-out today.
     workers: CongressSeat[];
+    // This lane's position in the board — used only to decide the density's
+    // auto-expand default (desktop inline-expands the first N lanes; see
+    // `autoExpandLanes`). Not an identity, purely a render-default input.
+    laneIndex: number;
 }) {
     const { theme } = useUnistyles();
+    const d = useDensity();
     const navigateToSession = useNavigateToSession();
     const [expanded, setExpanded] = React.useState(false);
     const { session, seat } = row;
@@ -421,46 +551,61 @@ function LaneTile({ row, rosterUnreachable, selected, workers }: {
     const canShowTail = !!seat && seat.renderSafe === true && !!seat.lastAssistantText;
     const tailText = canShowTail ? seat!.lastAssistantText! : null;
 
+    // Desktop auto-expands this lane's tail inline (spec §3 "terminals expandable
+    // inline" — dense multi-lane view); phone/deck stay collapsed to one honest
+    // line until tapped. This is a DEFAULT only — `expanded` still toggles the
+    // SAME state on every density, so a phone user can still tap to see the
+    // tail; it's just off by default where screen space is scarcest.
+    const effectiveExpanded = expanded || laneIndex < d.autoExpandLanes;
+
     return (
         <Pressable
-            style={[styles.laneTile, selected && styles.laneTileSelected]}
+            style={[
+                styles.laneTile,
+                { borderRadius: d.cardRadius, paddingVertical: d.cardPaddingV, paddingHorizontal: d.cardPaddingH, marginBottom: d.cardGap, minHeight: Math.max(64, d.minTouchSize + 32) },
+                selected && styles.laneTileSelected,
+            ]}
             onPress={() => navigateToSession(session.id)}
         >
             <View style={styles.laneTileRow}>
                 <View style={styles.laneAvatar}>
-                    <Avatar id={seat ? seat.seat : session.avatarId} size={40} monochrome={!health?.isConnected && honest.label !== 'working'} flavor={session.flavor} />
+                    <Avatar id={seat ? seat.seat : session.avatarId} size={d.laneAvatarSize} monochrome={!health?.isConnected && honest.label !== 'working'} flavor={session.flavor} />
                 </View>
                 <View style={styles.laneCenter}>
                     <View style={styles.laneTitleRow}>
-                        <Text style={styles.laneTitle} numberOfLines={1}>{session.name}</Text>
+                        <Text style={[styles.laneTitle, { fontSize: scaled(15, d.typeScale) }]} numberOfLines={1}>{session.name}</Text>
                         {pressure ? (
-                            <Text style={[styles.lanePressure, { color: pressure.color }]}>{pressure.label}</Text>
+                            <Text style={[styles.lanePressure, { color: pressure.color, fontSize: scaled(11, d.typeScale) }]}>{pressure.label}</Text>
                         ) : null}
                     </View>
-                    <Text style={styles.laneIdentity} numberOfLines={1}>{identity}</Text>
+                    <Text style={[styles.laneIdentity, { fontSize: scaled(12, d.typeScale) }]} numberOfLines={1}>{identity}</Text>
                     <View style={styles.laneStatusRow}>
                         <StatusDot color={honest.color} isPulsing={honest.label === 'working'} size={7} />
                         <Text
-                            style={[styles.laneThought, { color: honest.color }, thought?.stale && styles.laneThoughtStale]}
-                            numberOfLines={expanded ? 4 : 1}
+                            style={[styles.laneThought, { color: honest.color, fontSize: scaled(13, d.typeScale) }, thought?.stale && styles.laneThoughtStale]}
+                            numberOfLines={effectiveExpanded ? 4 : 1}
                         >
                             {workLine}
                         </Text>
                     </View>
                 </View>
-                <Pressable hitSlop={8} onPress={() => setExpanded((v) => !v)} style={styles.expandToggle}>
-                    <Text style={styles.expandChevron}>{expanded ? '▴' : '▾'}</Text>
+                <Pressable
+                    hitSlop={8}
+                    onPress={() => setExpanded((v) => !v)}
+                    style={[styles.expandToggle, { minWidth: d.minTouchSize, minHeight: d.minTouchSize, alignItems: 'center', justifyContent: 'center' }]}
+                >
+                    <Text style={[styles.expandChevron, { fontSize: scaled(14, d.typeScale) }]}>{effectiveExpanded ? '▴' : '▾'}</Text>
                 </Pressable>
             </View>
 
-            {expanded ? (
+            {effectiveExpanded ? (
                 <View style={styles.laneTail}>
                     {tailText ? (
-                        <Text style={styles.laneTailText} numberOfLines={6}>{tailText}</Text>
+                        <Text style={[styles.laneTailText, { fontSize: scaled(12, d.typeScale) }]} numberOfLines={6}>{tailText}</Text>
                     ) : (
                         // Honest-not-fabricated: the spec asks for a live output tail;
                         // this data layer doesn't expose a stream yet — say so, don't fake it.
-                        <Text style={styles.laneTailMissing}>
+                        <Text style={[styles.laneTailMissing, { fontSize: scaled(12, d.typeScale) }]}>
                             no live output tail wired yet — the oracle hasn't published a render-safe transcript signal for this lane
                         </Text>
                     )}
@@ -475,6 +620,7 @@ function LaneTile({ row, rosterUnreachable, selected, workers }: {
 }
 
 function TheWorkPlane({ selectedSessionId }: { selectedSessionId?: string }) {
+    const d = useDensity();
     const data = useVisibleSessionListViewData();
     const { sessions: roster, workers, unreachable: rosterUnreachable } = useCongressRoster();
 
@@ -502,46 +648,47 @@ function TheWorkPlane({ selectedSessionId }: { selectedSessionId?: string }) {
 
     if (!data) {
         // First paint, no data yet — quiet, never a fake board.
-        return <View style={styles.plane} />;
+        return <View style={[styles.plane, { marginBottom: d.planeGap }]} />;
     }
 
     if (lanes.length === 0) {
         return (
-            <View style={styles.plane}>
-                <Text style={styles.planeTitle}>THE WORK</Text>
-                <Text style={styles.quietLine}>No active lanes — the board is empty</Text>
+            <View style={[styles.plane, { marginBottom: d.planeGap }]}>
+                <Text style={[styles.planeTitle, { fontSize: scaled(13, d.typeScale) }]}>THE WORK</Text>
+                <Text style={[styles.quietLine, { fontSize: scaled(13, d.typeScale) }]}>No active lanes — the board is empty</Text>
             </View>
         );
     }
 
     return (
-        <View style={styles.plane}>
+        <View style={[styles.plane, { marginBottom: d.planeGap }]}>
             <View style={styles.planeTitleRow}>
-                <Text style={styles.planeTitle}>THE WORK · {lanes.length}</Text>
+                <Text style={[styles.planeTitle, { fontSize: scaled(13, d.typeScale) }]}>THE WORK · {lanes.length}</Text>
                 {rosterUnreachable ? (
-                    <Text style={styles.planeTitleWarn}>congress roster unreachable — showing last-known lanes</Text>
+                    <Text style={[styles.planeTitleWarn, { fontSize: scaled(11, d.typeScale) }]}>congress roster unreachable — showing last-known lanes</Text>
                 ) : null}
             </View>
-            {lanes.map((row) => (
+            {lanes.map((row, i) => (
                 <LaneTile
                     key={row.session.id}
                     row={row}
                     rosterUnreachable={rosterUnreachable}
                     selected={row.session.id === selectedSessionId}
                     workers={workersByLane.get(row.session.id) ?? []}
+                    laneIndex={i}
                 />
             ))}
             {ungroupedWorkers.length > 0 ? (
                 <View style={styles.ungroupedWorkersBlock}>
-                    <Text style={styles.workerFanoutInferred}>
+                    <Text style={[styles.workerFanoutInferred, { fontSize: scaled(10, d.typeScale) }]}>
                         {ungroupedWorkers.length} worker{ungroupedWorkers.length === 1 ? '' : 's'} with no host+pedal match to a lane on screen — shown unassigned rather than guessed into a lane
                     </Text>
-                    <View style={styles.workerRoster}>
+                    <View style={[styles.workerRoster, { gap: d.cardGap }]}>
                         {ungroupedWorkers.slice(0, WORKER_AVATAR_SHOWN).map((w, i) => (
                             <WorkerAvatar key={`${w.seat}-${i}`} worker={w} rosterUnreachable={rosterUnreachable} />
                         ))}
                         {ungroupedWorkers.length > WORKER_AVATAR_SHOWN ? (
-                            <Text style={styles.workerMore}>+{ungroupedWorkers.length - WORKER_AVATAR_SHOWN} more</Text>
+                            <Text style={[styles.workerMore, { fontSize: scaled(12, d.typeScale) }]}>+{ungroupedWorkers.length - WORKER_AVATAR_SHOWN} more</Text>
                         ) : null}
                     </View>
                 </View>
@@ -579,6 +726,7 @@ function vitalDotColor(unreachable: boolean, hasWarning: boolean, hasData: boole
 }
 
 function VitalsStrip() {
+    const dens = useDensity();
     const vram = useVram();
     const disk = useDisk();
     const heartbeat = useHeartbeat();
@@ -651,15 +799,45 @@ function VitalsStrip() {
 // void, no hand-pick-a-session-first gate).
 // ============================================================================
 
-export default function CockpitV2() {
+// Dev-only density picker. The cockpit's three postures (desktop / phone / deck)
+// all read the SAME component tree — this segmented control switches the
+// DensityContext value so the desk can dogfood all three in one browser tab
+// without simulating device widths. Not shipped to the live surface.
+function DensityPicker({ density, onChange }: { density: Density; onChange: (d: Density) => void }) {
+    const options: Density[] = ['desktop', 'deck', 'phone'];
     return (
-        <ScrollView contentContainerStyle={styles.scroll}>
-            <View style={styles.container}>
-                <NeedsYouPlane />
-                <TheWorkPlane />
-                <VitalsStrip />
-            </View>
-        </ScrollView>
+        <View style={styles.densityPicker}>
+            {options.map((opt) => {
+                const active = opt === density;
+                return (
+                    <Pressable
+                        key={opt}
+                        onPress={() => onChange(opt)}
+                        style={[styles.densityChip, active && styles.densityChipActive]}
+                    >
+                        <Text style={[styles.densityChipText, active && styles.densityChipTextActive]}>
+                            {opt}
+                        </Text>
+                    </Pressable>
+                );
+            })}
+        </View>
+    );
+}
+
+export default function CockpitV2() {
+    const [density, setDensity] = React.useState<Density>('desktop');
+    return (
+        <DensityContext.Provider value={density}>
+            <ScrollView contentContainerStyle={styles.scroll}>
+                <View style={styles.container}>
+                    <DensityPicker density={density} onChange={setDensity} />
+                    <NeedsYouPlane />
+                    <TheWorkPlane />
+                    <VitalsStrip />
+                </View>
+            </ScrollView>
+        </DensityContext.Provider>
     );
 }
 
@@ -673,6 +851,31 @@ const styles = StyleSheet.create((theme) => ({
         alignSelf: 'center',
         paddingHorizontal: 16,
         paddingTop: 16,
+    },
+    densityPicker: {
+        flexDirection: 'row',
+        gap: 6,
+        marginBottom: 12,
+        alignSelf: 'flex-start',
+    },
+    densityChip: {
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 6,
+        backgroundColor: theme.colors.groupped.background,
+    },
+    densityChipActive: {
+        backgroundColor: theme.colors.textLink,
+    },
+    densityChipText: {
+        fontSize: 11,
+        color: theme.colors.textSecondary,
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+        ...Typography.default('semiBold'),
+    },
+    densityChipTextActive: {
+        color: '#FFFFFF',
     },
     plane: {
         marginBottom: 24,
