@@ -76,10 +76,17 @@ On load the header reads "9 of 11 live"; within seconds it drains to **"0 of 11 
 - **Fix:** trace the "N live" derivation + staleness window; reconcile with per-seat verdicts.
 - **Accept:** observed over **5 min**, the live count reflects true seat liveness and does not drain to 0 while seats are present.
 
-### CKP-08 · Raw parse errors surface as a user-facing toast · `bug` · Minor · OPEN
+### CKP-08 · Raw parse errors surface as a user-facing toast · `bug` · Minor · PR
 A red toast shows "Failed to parse congress relay res…" with a climbing count (the cumulative parse-error counter, ~24/min). Developer exception strings on the human surface.
 - **Fix:** swallow parse failures to `console` only; the honest-state plane is the user-facing signal.
 - **Accept:** no dev-error toasts on the surface over 3 min. (CKP-01/02 remove the source; this removes the leak.)
+> **PR ready 2026-07-02 ~13:35** — branch `fix/ckp-08-feed-diagnostics` @ `ab82420` (stack:
+> lane → CKP-03 → CKP-02 → CKP-08). The "toast" was LogBox surfacing `console.error`; new
+> `feedDiagnostic()` (console.log, compact summary) applied to all 9 parse sites across the
+> 8 polled honest feeds; one-shot user flows keep console.error deliberately. **Evidence
+> (controlled fault injection, 168s arc):** fetch patched to feed relay garbage 95s →
+> 17 quiet `[honest-feed]` diagnostics, 0 error-tier, no toast ever, plane held last-good;
+> fault cleared → diagnostics stopped, feed recovered.
 
 ---
 
