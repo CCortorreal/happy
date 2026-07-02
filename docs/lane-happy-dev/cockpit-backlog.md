@@ -213,7 +213,13 @@ DESKTOP/DECK/PHONE/MOCK RECURSIVE ROSTER sit as primary tabs; "Mock roster" is a
 
 ---
 
-## CKP-23 · Relocate cockpit modules out of `app/` (kill route pollution) · `infra` · Major · OPEN
+## CKP-23 · Relocate cockpit modules out of `app/` (kill route pollution) · `infra` · Major · DONE
+> **DONE 2026-07-02 `e69fb7b`** — Carlos approved the Metro restart. Moved
+> `sources/app/(app)/dev/cockpit/` → `sources/cockpit/`, rewired 12+1 imports to `@/cockpit/*`,
+> removed the `SessionsLink` `as never` bridge. After a Metro `--clear`: typecheck GREEN with
+> clean `/sessions` (no cast), router.d.ts regenerated with 0 phantom/garbage routes, live 44s
+> with 0 cockpit warnings + 0 dup-key + 0 errors. Only a pre-existing unrelated
+> `messages-demo-data.ts` warning remains.
 **Follow-up from the NOC swing.** The cockpit component modules live under
 `sources/app/(app)/dev/cockpit/`, which is expo-router's route root — so every module
 (planes, components, NocGrid, colors, density, selection…) registers as a **phantom route**
