@@ -38,7 +38,12 @@ The `:3005` happy-server ran ~18h under `tsx` (no `--watch`) in an elevated cons
 - **Accept:** make a trivial server edit, observe it live within ~5s with no manual restart. Confirmed over 2 edits.
 - **Dep:** blocks live verification of every server-side ticket (CKP-01/02/03/04/22).
 
-### CKP-01 · RELAY plane: schema mismatch · `bug` · Critical · OPEN
+### CKP-01 · RELAY plane: schema mismatch · `bug` · Critical · PR
+> **PR ready 2026-07-02 ~12:25** — branch `fix/ckp-01-relay-schema` @ `f4d633e`, awaiting
+> Carlos merge. Server now sends the client wire shape ({ts, stale, items[{id, ts:epochMs,
+> …}]}, djb2 content id doubles as merge-dedupe key). **Over-time evidence (231s window,
+> instrumented live):** 0 relay parse errors ever (kanban control fired 86× — instrument
+> proven), `RELAY · 50` rendered + held, never unreachable, no dev toast.
 Server sends `{ ts: ISO-string, from, to, kind, excerpt }`; client `CongressRelayItemSchema` requires an `id` (absent) and a **numeric** `ts` (gets a string). Parse rejected → "can't reach the relay log" + climbing error toast.
 - **Files:** `packages/happy-server/.../congressOpsRoutes.ts` (relay builder), `packages/happy-app/sources/sync/congressRelayTypes.ts`.
 - **Fix:** server already computes `epochMs` — send that as `ts`; add `id` (hash of ts+from+excerpt).
