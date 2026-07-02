@@ -18,8 +18,8 @@ const POLL_INTERVAL_MS = 30000;   // disk moves slowly; idle-cheap polling
 
 export function useDisk(): { view: DiskView | null; unreachable: boolean } {
     const { data, unreachable } = useHonestFeed<DiskView>(
-        async (credentials) => {
-            const response = await getDisk(credentials);
+        async (credentials, signal) => {
+            const response = await getDisk(credentials, signal);
             return { stale: response.stale, data: response.stale ? null : response.view };
         },
         {

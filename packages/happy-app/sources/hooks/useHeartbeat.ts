@@ -15,8 +15,8 @@ const POLL_INTERVAL_MS = 15000;
 
 export function useHeartbeat(): { view: HeartbeatView | null; unreachable: boolean } {
     const { data, unreachable } = useHonestFeed<HeartbeatView>(
-        async (credentials) => {
-            const response = await getHeartbeat(credentials);
+        async (credentials, signal) => {
+            const response = await getHeartbeat(credentials, signal);
             return { stale: response.stale, data: response.stale ? null : response.view };
         },
         {

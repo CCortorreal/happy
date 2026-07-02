@@ -54,7 +54,7 @@ const DEFAULT_UNREACHABLE_AFTER = 3;
 const POLL_TIMEOUT_MS = 4000;
 
 export function useHonestFeed<T>(
-    fetcher: (credentials: AuthCredentials) => Promise<{ stale: boolean; data: T | null }>,
+    fetcher: (credentials: AuthCredentials, signal?: AbortSignal) => Promise<{ stale: boolean; data: T | null }>,
     options?: HonestFeedOptions<T>,
 ): HonestFeed<T> {
     const intervalMs = options?.intervalMs ?? DEFAULT_INTERVAL_MS;
@@ -91,16 +91,26 @@ export function useHonestFeed<T>(
         };
 
         const poll = async () => {
+            // Per-poll AbortController: if the deadline fires before the fetch settles,
+            // the underlying request is truly cancelled (not just orphaned). Without
+            // this, a slow backend leaves lingering fetches whose late responses can
+            // still resolve into stale-flag territory long after we already gave up.
+            const controller = new AbortController();
+            let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
             try {
                 const credentials = await TokenStorage.getCredentials();
                 if (mounted && credentials) {
                     // Race the fetch against a deadline so a HANGING (not refused) backend
                     // still settles as a failure — without this, a pending promise is neither
-                    // success nor failure and `unreachable` never flips.
+                    // success nor failure and `unreachable` never flips. On timeout, abort()
+                    // fires so the underlying fetch is actually torn down.
                     const timeout = new Promise<never>((_, reject) => {
-                        setTimeout(() => reject(new Error('poll timeout')), POLL_TIMEOUT_MS);
+                        timeoutHandle = setTimeout(() => {
+                            controller.abort();
+                            reject(new Error('poll timeout'));
+                        }, POLL_TIMEOUT_MS);
                     });
-                    const res = await Promise.race([fetcherRef.current(credentials), timeout]);
+                    const res = await Promise.race([fetcherRef.current(credentials, controller.signal), timeout]);
                     if (mounted && !res.stale) {
                         // Authoritative fresh read (content OR a genuine empty) -> adopt.
                         failures.current = 0;
@@ -126,6 +136,11 @@ export function useHonestFeed<T>(
             } catch {
                 markFailure();
             } finally {
+                // Clear the timeout handle so a settled-before-deadline poll doesn't
+                // leave a dangling abort() firing on the next tick.
+                if (timeoutHandle !== null) {
+                    clearTimeout(timeoutHandle);
+                }
                 if (mounted) {
                     timer = setTimeout(poll, intervalMs);
                 }

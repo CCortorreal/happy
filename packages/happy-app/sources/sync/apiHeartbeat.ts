@@ -12,15 +12,16 @@ import { HeartbeatResponse, HeartbeatResponseSchema } from './heartbeatTypes';
  * body, returns `{ stale: true, view: null }` so the caller keeps last-good and the
  * LOUD-guard distinguishes broken from quiet (here, stale-feed == daemon-dead signal).
  */
-export async function getHeartbeat(credentials: AuthCredentials): Promise<HeartbeatResponse> {
+export async function getHeartbeat(credentials: AuthCredentials, signal?: AbortSignal): Promise<HeartbeatResponse> {
     const API_ENDPOINT = getServerUrl();
-    return await backoff(async () => {
+    const doFetch = async (): Promise<HeartbeatResponse> => {
         const response = await fetch(`${API_ENDPOINT}/v1/heartbeat`, {
             method: 'GET',
             headers: {
                 'Authorization': `Bearer ${credentials.token}`,
                 'X-Happy-Client': getHappyClientId(),
-            }
+            },
+            signal,
         });
         if (!response.ok) {
             return { stale: true, view: null };
@@ -32,5 +33,8 @@ export async function getHeartbeat(credentials: AuthCredentials): Promise<Heartb
             return { stale: true, view: null };
         }
         return parsed.data;
-    });
+    };
+    // Signal path skips backoff (see apiVram note): AbortError would loop forever
+    // otherwise, defeating cancellation. Legacy callers keep backoff behavior.
+    return signal ? doFetch() : backoff(doFetch);
 }

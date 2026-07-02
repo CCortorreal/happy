@@ -17,8 +17,8 @@ const EMPTY_ITEMS: WardenItem[] = [];
 
 export function useWarden(): { items: WardenItem[]; unreachable: boolean } {
     const { data, unreachable } = useHonestFeed<WardenItem[]>(
-        async (credentials) => {
-            const response = await getWarden(credentials);
+        async (credentials, signal) => {
+            const response = await getWarden(credentials, signal);
             return { stale: response.stale, data: response.stale ? null : response.items };
         },
         { hasContent: (items) => items.length > 0 },

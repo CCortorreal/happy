@@ -12,15 +12,16 @@ import { DiskResponse, DiskResponseSchema } from './diskTypes';
  * returns `{ stale: true, view: null }` so the caller keeps last-good and the LOUD-
  * guard distinguishes broken from quiet.
  */
-export async function getDisk(credentials: AuthCredentials): Promise<DiskResponse> {
+export async function getDisk(credentials: AuthCredentials, signal?: AbortSignal): Promise<DiskResponse> {
     const API_ENDPOINT = getServerUrl();
-    return await backoff(async () => {
+    const doFetch = async (): Promise<DiskResponse> => {
         const response = await fetch(`${API_ENDPOINT}/v1/disk`, {
             method: 'GET',
             headers: {
                 'Authorization': `Bearer ${credentials.token}`,
                 'X-Happy-Client': getHappyClientId(),
-            }
+            },
+            signal,
         });
         if (!response.ok) {
             return { stale: true, view: null };
@@ -32,5 +33,8 @@ export async function getDisk(credentials: AuthCredentials): Promise<DiskRespons
             return { stale: true, view: null };
         }
         return parsed.data;
-    });
+    };
+    // Signal path skips backoff (see apiVram note): AbortError would loop forever
+    // otherwise, defeating cancellation. Legacy callers keep backoff behavior.
+    return signal ? doFetch() : backoff(doFetch);
 }

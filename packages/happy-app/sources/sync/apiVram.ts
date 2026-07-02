@@ -12,15 +12,16 @@ import { VramResponse, VramResponseSchema } from './vramTypes';
  * non-OK status or unparseable body, returns `{ stale: true, view: null }` so the
  * caller keeps last-good and the LOUD-guard distinguishes broken from quiet.
  */
-export async function getVram(credentials: AuthCredentials): Promise<VramResponse> {
+export async function getVram(credentials: AuthCredentials, signal?: AbortSignal): Promise<VramResponse> {
     const API_ENDPOINT = getServerUrl();
-    return await backoff(async () => {
+    const doFetch = async (): Promise<VramResponse> => {
         const response = await fetch(`${API_ENDPOINT}/v1/vram`, {
             method: 'GET',
             headers: {
                 'Authorization': `Bearer ${credentials.token}`,
                 'X-Happy-Client': getHappyClientId(),
-            }
+            },
+            signal,
         });
         if (!response.ok) {
             return { stale: true, view: null };
@@ -32,5 +33,10 @@ export async function getVram(credentials: AuthCredentials): Promise<VramRespons
             return { stale: true, view: null };
         }
         return parsed.data;
-    });
+    };
+    // When the caller (useHonestFeed) supplies an AbortSignal, SKIP backoff:
+    // useHonestFeed already re-polls on failure, and backoff would swallow an
+    // AbortError from fetch and retry forever, defeating cancellation. Callers
+    // without a signal keep the legacy backoff behavior — no behavior change.
+    return signal ? doFetch() : backoff(doFetch);
 }

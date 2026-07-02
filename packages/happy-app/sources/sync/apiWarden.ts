@@ -15,17 +15,19 @@ import { WardenResponse, WardenResponseSchema, WardenStatusResponse, WardenStatu
  * next poll (the surface never shows an error wall). `backoff` retries transport.
  */
 export async function getWarden(
-    credentials: AuthCredentials
+    credentials: AuthCredentials,
+    signal?: AbortSignal,
 ): Promise<WardenResponse> {
     const API_ENDPOINT = getServerUrl();
 
-    return await backoff(async () => {
+    const doFetch = async (): Promise<WardenResponse> => {
         const response = await fetch(`${API_ENDPOINT}/v1/warden`, {
             method: 'GET',
             headers: {
                 'Authorization': `Bearer ${credentials.token}`,
                 'X-Happy-Client': getHappyClientId(),
-            }
+            },
+            signal,
         });
 
         if (!response.ok) {
@@ -41,7 +43,10 @@ export async function getWarden(
         }
 
         return parsed.data;
-    });
+    };
+    // Signal path skips backoff: AbortError would loop forever inside backoff
+    // otherwise, defeating cancellation. Legacy callers keep backoff behavior.
+    return signal ? doFetch() : backoff(doFetch);
 }
 
 /**

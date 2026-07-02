@@ -13,8 +13,8 @@ import { useHonestFeed } from '@/hooks/useHonestFeed';
 
 export function useVram(): { view: VramView | null; unreachable: boolean } {
     const { data, unreachable } = useHonestFeed<VramView>(
-        async (credentials) => {
-            const response = await getVram(credentials);
+        async (credentials, signal) => {
+            const response = await getVram(credentials, signal);
             return { stale: response.stale, data: response.stale ? null : response.view };
         },
         // hasContent — closes G13 (permanently-dead-feed regression): without a
