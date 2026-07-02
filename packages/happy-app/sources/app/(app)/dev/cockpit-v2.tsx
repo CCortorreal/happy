@@ -14,6 +14,7 @@ import { useAuth } from '@/auth/AuthContext';
 import { FeedUnreachable } from '@/components/HonestSignal';
 import { useVisibleSessionListViewData } from '@/hooks/useVisibleSessionListViewData';
 import { useCongressRoster } from '@/hooks/useCongressRoster';
+import { useCongressTree, CongressTreeNode, MOCK_RECURSIVE_ROSTER } from '@/hooks/useCongressTree';
 import { useNavigateToSession } from '@/hooks/useNavigateToSession';
 import { CongressSeat } from '@/sync/congressTypes';
 import { SessionRowData } from '@/sync/storage';
@@ -511,7 +512,13 @@ function laneHonestState(seat: CongressSeat | undefined, rosterUnreachable: bool
     return { label: 'working', color: GREEN };
 }
 
-function LaneTile({ row, rosterUnreachable, selected, workers, laneIndex }: {
+// Recursive-tier indent width per depth level (2026-07-02, caged ai-ops design,
+// vision check #6 sub-check 3). Nested lanes get a `depth * INDENT_PX` left
+// margin PLUS a subtle left border to make the nesting glanceable — the same
+// pattern the munder building's FloorTile hierarchy uses.
+const NESTED_INDENT_PX = 28;
+
+function LaneTile({ row, rosterUnreachable, selected, workers, laneIndex, depth }: {
     row: LaneRow;
     rosterUnreachable: boolean;
     selected: boolean;
@@ -522,6 +529,11 @@ function LaneTile({ row, rosterUnreachable, selected, workers, laneIndex }: {
     // auto-expand default (desktop inline-expands the first N lanes; see
     // `autoExpandLanes`). Not an identity, purely a render-default input.
     laneIndex: number;
+    // Recursive-tier depth. 0 = root (penthouse/top-level), 1+ = nested under
+    // a parent seat. Drives left-indent + a subtle left border for glanceable
+    // nesting. Backward-compat: existing flat-list callers pass 0 (or omit if
+    // TypeScript allows) and get the identical un-indented render.
+    depth: number;
 }) {
     const { theme } = useUnistyles();
     const d = useDensity();
@@ -558,11 +570,21 @@ function LaneTile({ row, rosterUnreachable, selected, workers, laneIndex }: {
     // tail; it's just off by default where screen space is scarcest.
     const effectiveExpanded = expanded || laneIndex < d.autoExpandLanes;
 
+    // Recursive-tier nesting styles: only apply when depth > 0 so the depth-0
+    // (root) render is byte-identical to the pre-tree flat surface.
+    const nestedStyle = depth > 0 ? {
+        marginLeft: depth * NESTED_INDENT_PX,
+        borderLeftWidth: 2,
+        borderLeftColor: theme.colors.divider,
+        paddingLeft: Math.max(d.cardPaddingH, 10),
+    } : null;
+
     return (
         <Pressable
             style={[
                 styles.laneTile,
                 { borderRadius: d.cardRadius, paddingVertical: d.cardPaddingV, paddingHorizontal: d.cardPaddingH, marginBottom: d.cardGap, minHeight: Math.max(64, d.minTouchSize + 32) },
+                nestedStyle,
                 selected && styles.laneTileSelected,
             ]}
             onPress={() => navigateToSession(session.id)}
@@ -619,10 +641,45 @@ function LaneTile({ row, rosterUnreachable, selected, workers, laneIndex }: {
     );
 }
 
-function TheWorkPlane({ selectedSessionId }: { selectedSessionId?: string }) {
+// Synthesizes a minimal SessionRowData from a seat that has no live session
+// row (mock nodes, or roster-only seats that never appeared in the sessions
+// view-model). LaneTile keys its title/navigate off SessionRowData; the mock
+// tree needs something to render against without wiring in a whole fake
+// Session object. Marked honestly with `SYNTH:` prefix in the id so a
+// consumer that stumbles into a synthesized row while debugging sees it's not
+// a real session id.
+function synthesizeSessionRowFromSeat(seat: CongressSeat): SessionRowData {
+    return {
+        id: `SYNTH:${seat.seat}`,
+        name: seat.seat,
+        subtitle: seat.currentWork ?? seat.pedal ?? 'seat-only (no session row)',
+        avatarId: seat.seat,
+        flavor: null,
+        state: 'waiting',
+        hasDraft: false,
+        active: seat.verdict === 'alive',
+        machineId: null,
+        path: null,
+        homeDir: null,
+        completedTodosCount: 0,
+        totalTodosCount: 0,
+        hasUnread: false,
+        claudeSessionId: seat.claudeSid ?? null,
+    };
+}
+
+function TheWorkPlane({ selectedSessionId, mockRoster }: {
+    selectedSessionId?: string;
+    // DEV-ONLY: when non-null, TheWorkPlane consumes the tree hydrated from
+    // this fixture instead of the live congress roster. Wired to the "Mock
+    // recursive roster" toggle at the top of CockpitV2. Never non-null on the
+    // live surface (dev route only).
+    mockRoster?: CongressSeat[] | null;
+}) {
     const d = useDensity();
     const data = useVisibleSessionListViewData();
     const { sessions: roster, workers, unreachable: rosterUnreachable } = useCongressRoster();
+    const tree = useCongressTree(mockRoster ?? null);
 
     // Flatten the view-model to a plain lane list — THE WORK is the living center,
     // not a list buried under a gauge, so Slice 1 renders every lane as an equal tile
@@ -646,11 +703,103 @@ function TheWorkPlane({ selectedSessionId }: { selectedSessionId?: string }) {
         [lanes, workers],
     );
 
-    if (!data) {
+    // Live-session lookup by seat id — for tree nodes whose seat has a
+    // corresponding SessionRowData, we render that (title, navigate, tail);
+    // for tree nodes with no matching session row (workers, mock seats), we
+    // synthesize a minimal SessionRowData so LaneTile still renders honestly.
+    const sessionBySeatId = React.useMemo(() => {
+        const m = new Map<string, LaneRow>();
+        for (const row of lanes) {
+            if (row.seat) m.set(row.seat.seat, row);
+        }
+        return m;
+    }, [lanes]);
+
+    // Recursive-tier render (2026-07-02, caged ai-ops design, vision check #6
+    // sub-check 3). Walks the tree depth-first, emitting a LaneTile per node
+    // with `depth` threaded through so the tile can indent + apply the nested
+    // left-border. Empty roster surfaces the same quiet "no lanes" line the
+    // flat renderer used — no fake board.
+    const renderTreeNode = (node: CongressTreeNode, laneIndex: { i: number }, out: React.ReactElement[]): void => {
+        const liveRow = sessionBySeatId.get(node.seat.seat);
+        const row: LaneRow = liveRow ?? {
+            session: synthesizeSessionRowFromSeat(node.seat),
+            seat: node.seat,
+        };
+        out.push(
+            <LaneTile
+                key={`tree:${node.seat.seat}`}
+                row={row}
+                rosterUnreachable={rosterUnreachable}
+                selected={row.session.id === selectedSessionId}
+                // Tree-mode workers are already CHILDREN in the tree — the
+                // host+pedal fan-out is skipped for tree nodes (children are
+                // rendered as their own LaneTiles below). Fall back to the
+                // flat-mode fan-out ONLY for depth-0 roots that DO have a
+                // live session row and no tree children — the closest thing
+                // to the pre-tree render.
+                workers={node.children.length === 0 && liveRow ? (workersByLane.get(liveRow.session.id) ?? []) : []}
+                laneIndex={laneIndex.i}
+                depth={node.depth}
+            />,
+        );
+        laneIndex.i += 1;
+        for (const child of node.children) {
+            renderTreeNode(child, laneIndex, out);
+        }
+    };
+
+    // Decide which mode we're in:
+    //   - mockRoster on -> tree mode, render only the tree.
+    //   - mockRoster off + tree has real structure (any root has children) ->
+    //     tree mode, render tree.
+    //   - mockRoster off + tree is a flat forest (every node is a root, no
+    //     children) -> fall back to the pre-tree flat renderer, which still
+    //     carries the host+pedal worker fan-out for legacy rosters.
+    const treeHasNesting = tree.roots.some((r) => r.children.length > 0);
+    const useTreeMode = !!mockRoster || treeHasNesting;
+
+    if (!data && !mockRoster) {
         // First paint, no data yet — quiet, never a fake board.
         return <View style={[styles.plane, { marginBottom: d.planeGap }]} />;
     }
 
+    if (useTreeMode) {
+        const treeLanes: React.ReactElement[] = [];
+        const counter = { i: 0 };
+        for (const root of tree.roots) {
+            renderTreeNode(root, counter, treeLanes);
+        }
+        if (treeLanes.length === 0) {
+            return (
+                <View style={[styles.plane, { marginBottom: d.planeGap }]}>
+                    <Text style={[styles.planeTitle, { fontSize: scaled(13, d.typeScale) }]}>THE WORK</Text>
+                    <Text style={[styles.quietLine, { fontSize: scaled(13, d.typeScale) }]}>No active lanes — the board is empty</Text>
+                </View>
+            );
+        }
+        return (
+            <View style={[styles.plane, { marginBottom: d.planeGap }]}>
+                <View style={styles.planeTitleRow}>
+                    <Text style={[styles.planeTitle, { fontSize: scaled(13, d.typeScale) }]}>THE WORK · {treeLanes.length}{mockRoster ? ' · MOCK' : ''}</Text>
+                    {rosterUnreachable && !mockRoster ? (
+                        <Text style={[styles.planeTitleWarn, { fontSize: scaled(11, d.typeScale) }]}>congress roster unreachable — showing last-known lanes</Text>
+                    ) : null}
+                    {tree.droppedCycleParents.length > 0 ? (
+                        <Text style={[styles.planeTitleWarn, { fontSize: scaled(11, d.typeScale) }]}>
+                            {tree.droppedCycleParents.length} cycle-breaking edge{tree.droppedCycleParents.length === 1 ? '' : 's'} dropped — see console
+                        </Text>
+                    ) : null}
+                </View>
+                {treeLanes}
+            </View>
+        );
+    }
+
+    // FLAT FALLBACK — the pre-tree renderer. Kept intact so a legacy flat
+    // roster (every seat parent_seat_id === null, no nested structure) still
+    // paints exactly as it did before this shift, including the host+pedal
+    // worker fan-out (the closest linkage the old surface had).
     if (lanes.length === 0) {
         return (
             <View style={[styles.plane, { marginBottom: d.planeGap }]}>
@@ -676,6 +825,7 @@ function TheWorkPlane({ selectedSessionId }: { selectedSessionId?: string }) {
                     selected={row.session.id === selectedSessionId}
                     workers={workersByLane.get(row.session.id) ?? []}
                     laneIndex={i}
+                    depth={0}
                 />
             ))}
             {ungroupedWorkers.length > 0 ? (
@@ -833,15 +983,38 @@ function DensityPicker({ density, onChange }: { density: Density; onChange: (d: 
     );
 }
 
+// Dev-only mock-roster toggle. When ON, TheWorkPlane consumes the hardcoded
+// MOCK_RECURSIVE_ROSTER fixture (penthouse-god -> 2 floor-gods -> 1-2 workers
+// each) so the recursive-tier render code path can be exercised even while
+// the live seats-oracle roster is still a flat forest (no real seat has
+// parent_seat_id set yet). NOT shipped to the live surface — cockpit-v2 is a
+// dev route only, and this toggle is scoped to it.
+function MockRosterToggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
+    return (
+        <Pressable
+            onPress={() => onChange(!on)}
+            style={[styles.densityChip, on && styles.densityChipActive]}
+        >
+            <Text style={[styles.densityChipText, on && styles.densityChipTextActive]}>
+                {on ? 'Mock roster: ON' : 'Mock recursive roster'}
+            </Text>
+        </Pressable>
+    );
+}
+
 export default function CockpitV2() {
     const [density, setDensity] = React.useState<Density>('desktop');
+    const [mockOn, setMockOn] = React.useState(false);
     return (
         <DensityContext.Provider value={density}>
             <ScrollView contentContainerStyle={styles.scroll}>
                 <View style={styles.container}>
-                    <DensityPicker density={density} onChange={setDensity} />
+                    <View style={styles.devToolsRow}>
+                        <DensityPicker density={density} onChange={setDensity} />
+                        <MockRosterToggle on={mockOn} onChange={setMockOn} />
+                    </View>
                     <NeedsYouPlane />
-                    <TheWorkPlane />
+                    <TheWorkPlane mockRoster={mockOn ? MOCK_RECURSIVE_ROSTER : null} />
                     <VitalsStrip />
                 </View>
             </ScrollView>
@@ -859,6 +1032,13 @@ const styles = StyleSheet.create((theme) => ({
         alignSelf: 'center',
         paddingHorizontal: 16,
         paddingTop: 16,
+    },
+    devToolsRow: {
+        flexDirection: 'row',
+        gap: 12,
+        marginBottom: 12,
+        alignItems: 'center',
+        flexWrap: 'wrap',
     },
     densityPicker: {
         flexDirection: 'row',
