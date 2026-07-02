@@ -1,7 +1,11 @@
 import { z } from "zod";
 import { Fastify } from "../types";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
 
 // Congress roster route (Hearth — Phase 0 plumbing).
 //
@@ -120,6 +124,21 @@ const CongressSeatSchema = z.object({
     // needed on that day — only the mapping below has to start reading them.
     cardCounts: CongressCardCountsSchema,
     tailPreview: CongressTailPreviewSchema,
+    // Recursive-tier fields (2026-07-02, caged ai-ops design — see
+    // docs/lane-happy-dev/schema-recursive-congress-seat.md). The oracle does
+    // not emit these yet (tolerant passthrough, same shape as cardCounts/
+    // tailPreview above); the server-side caged-congress merge below is the
+    // first real producer. Absent -> the mapping below defaults every legacy
+    // oracle row to a depth-0, uncaged root — additive + backward-compatible,
+    // mirrors the client's congressTypes.ts schema defaults exactly so
+    // nothing diverges. `role` (already declared above) doubles as the
+    // recursive-tier role slot — the client's CongressSeatRoleSchema widens
+    // the SAME field tolerantly (unknown strings -> 'unknown'), so no
+    // parallel role_v2 field is introduced here.
+    parent_seat_id: z.string().nullish(),
+    depth: z.number().nullish(),
+    cage_status: z.string().nullish(),
+    cage_id: z.string().nullish(),
 });
 
 // The oracle's native envelope key is `roster` (its name across the whole
@@ -183,6 +202,285 @@ function readRoster(): { ts: number | null; seats: z.infer<typeof CongressSeatSc
     };
 }
 
+// ---- caged-congress merge (2026-07-02, host-bridge protocol pattern) ----
+//
+// The seats-oracle roster (readRoster above) only ever sees the HOST's own
+// registered seats — it has no visibility into the sealed cage (cage:mvf),
+// which lives inside WSL and is intentionally airlocked from the host process
+// tree. Per docs/lane-happy-dev/host-bridge-protocol.md §4 (recursive-schema
+// mapping) and docs/lane-happy-dev/schema-recursive-congress-seat.md, this
+// merge is a STOPGAP substitute for the not-yet-built host-bridge systemd
+// service: rather than wait for that service to sync cage state to Vesta over
+// the mesh, the server does a direct read-only WSL peek on every roster
+// request (cheap: a handful of small `cat`s), synthesizes a `cage-root`
+// penthouse seat per the protocol doc, and parents the real caged seats under
+// it. When the host-bridge service lands, this function is the natural
+// replacement target — same output shape, different transport.
+//
+// HARD RULE (bright-line, cage seal): read-only. Never docker exec, never
+// iptables/DOCKER-USER, never write into /root/cage-mvf. Only `cat` of the
+// seat JSON + beat/claim files, exactly like the mission's read-only recon
+// commands.
+
+type MergedSeat = z.infer<typeof CongressSeatSchema>;
+
+const CAGE_ID = 'cage-mvf';
+const CAGE_ROOT_SEAT_ID = 'cage-root';
+// Bridge-host-seat placeholder: the host-bridge protocol doc's ideal chain is
+// "Vesta root -> host-bridge seat -> cage-root -> caged seats", but the
+// systemd bridge service doesn't exist yet (open gap #1 in the protocol doc).
+// Until it does, cage-root has no real bridge seat to parent under, so it
+// parents to null (top-level) rather than fabricate a bridge seat that isn't
+// actually running. Revisit when the bridge service ships.
+const CAGE_ROOT_PARENT_SEAT_ID: string | null = null;
+
+const CagedSeatFileSchema = z.object({
+    seat: z.string(),
+    cuid: z.string().nullish(),
+    hostPid: z.number().nullish(),
+    registeredAt: z.string().nullish(),
+    role: z.string().nullish(),
+    pedal: z.string().nullish(),
+    cwd: z.string().nullish(),
+    host: z.string().nullish(),
+    claudeSid: z.string().nullish(),
+});
+
+// Known caged worker roles (per the mission's recon: overseer, ai-ops, aegis)
+// map cleanly onto the recursive role enum's 'worker' tier. Anything else
+// (a caged seat file we don't recognize) is honestly 'unknown' rather than
+// guessed — never fabricate a role.
+const KNOWN_CAGED_WORKER_SEATS = new Set(['overseer', 'ai-ops', 'aegis']);
+
+function homeDir(): string {
+    return process.env.USERPROFILE || process.env.HOME || '';
+}
+
+// Host UNCAGED seats: ~/.claude/peer-channel/state/seats/*.json — the same
+// registered-seat files seats-oracle.mjs reads (see recon), read directly
+// here since the merge needs their `role` re-mapped onto the recursive enum
+// (the oracle's flat `role` passthrough is a free-text label like "aegis",
+// not the tree enum). Read-only; the server never writes these.
+function readHostSeats(): MergedSeat[] {
+    const dir = join(homeDir(), '.claude', 'peer-channel', 'state', 'seats');
+    let files: string[];
+    try {
+        files = readdirSync(dir).filter((f) => f.endsWith('.json'));
+    } catch {
+        return []; // dir absent/unreadable -> omit gracefully, never fabricate
+    }
+    const seats: MergedSeat[] = [];
+    for (const f of files) {
+        let raw: string;
+        try {
+            raw = readFileSync(join(dir, f), 'utf8');
+        } catch {
+            continue; // one bad file must not drop the rest
+        }
+        let json: unknown;
+        try {
+            json = JSON.parse(raw);
+        } catch {
+            continue;
+        }
+        const parsed = CagedSeatFileSchema.safeParse(json);
+        if (!parsed.success) continue;
+        const rec = parsed.data;
+        // role mapping (mission spec): desk -> 'desk'; anything else we can't
+        // honestly classify -> 'unknown'. Never guess a tier for a host seat
+        // we don't recognize.
+        const role = rec.seat === 'desk' ? 'desk' : 'unknown';
+        seats.push(mergedSeat({
+            seat: rec.seat,
+            cuid: rec.cuid ?? null,
+            claudeSid: rec.claudeSid ?? null,
+            verdict: 'unverified', // host-seat liveness is the oracle's job, not this merge's — never re-derive it here
+            kind: 'session',
+            role,
+            pedal: rec.pedal ?? null,
+            host: rec.host ?? null,
+            pid: rec.hostPid ?? null,
+            parent_seat_id: null, // host seats are top-level in this merge (the oracle roster already carries the real ones; this is the honest-unknown fallback slice)
+            depth: 0,
+            cage_status: 'uncaged',
+            cage_id: null,
+        }));
+    }
+    return seats;
+}
+
+// Read-only WSL peek at the sealed cage's seat state. Cage seal discipline:
+// ONLY `cat`, never `docker exec`/`iptables`/writes. Any failure (WSL not
+// installed, distro not running, path missing, timeout) degrades to an empty
+// list — the roster stays honest (omit caged seats) rather than fabricate
+// liveness or seats. Every WSL call is a separate `cat` (no shell glob/loop
+// inside the WSL command — those were observed to mangle badly through the
+// wsl.exe quoting layer during recon; one file per call is the reliable shape).
+const WSL_TIMEOUT_MS = 4000;
+const CAGE_SEATS_BASE = '/root/cage-mvf/peer-channel/state/seats';
+const CAGED_SEAT_NAMES = ['overseer', 'ai-ops', 'aegis'] as const;
+
+async function wslCat(path: string): Promise<string | null> {
+    try {
+        const { stdout } = await execFileAsync('wsl', ['-d', 'Ubuntu', '-u', 'root', '--', 'cat', path], {
+            timeout: WSL_TIMEOUT_MS,
+        });
+        return stdout;
+    } catch {
+        return null; // unreadable/absent/WSL-down -> honest omission, never a fabricated value
+    }
+}
+
+async function readCagedCongress(): Promise<MergedSeat[]> {
+    // Probe the cage-root's own seat file first (proves WSL + the cage mount
+    // are reachable at all) before paying the cost of N more WSL calls.
+    const desk = await wslCat(`${CAGE_SEATS_BASE}/desk.json`);
+    if (desk == null) return []; // WSL unreachable -> omit the whole caged slice gracefully
+
+    const seats: MergedSeat[] = [];
+    // cage-root: synthetic penthouse seat per host-bridge-protocol.md §4.
+    // Not backed by a real seat file — it represents the cage boundary itself.
+    seats.push(mergedSeat({
+        seat: CAGE_ROOT_SEAT_ID,
+        cuid: null,
+        claudeSid: null,
+        verdict: 'sealed', // not a liveness verdict in the oracle sense — the cage boundary is definitionally "sealed", never re-derived
+        kind: 'worker',
+        role: 'penthouse',
+        pedal: null,
+        host: null,
+        pid: null,
+        parent_seat_id: CAGE_ROOT_PARENT_SEAT_ID,
+        depth: 0,
+        cage_status: 'sealed',
+        cage_id: CAGE_ID,
+    }));
+
+    for (const name of CAGED_SEAT_NAMES) {
+        const raw = await wslCat(`${CAGE_SEATS_BASE}/${name}.json`);
+        if (raw == null) continue; // this one seat unreadable -> drop just it, keep the rest honest
+        let json: unknown;
+        try {
+            json = JSON.parse(raw);
+        } catch {
+            continue;
+        }
+        const parsed = CagedSeatFileSchema.safeParse(json);
+        if (!parsed.success) continue;
+        const rec = parsed.data;
+        // Freshness: derive from the seat's own beat.ts (nanosecond epoch,
+        // confirmed via recon) when readable; never invent a value when it
+        // isn't. beat.ts absence doesn't drop the seat — it just means no
+        // freshness signal beyond registeredAt.
+        const beatRaw = await wslCat(`${CAGE_SEATS_BASE}/${name}/beat.ts`);
+        const beatMs = beatRaw != null && /^\d+$/.test(beatRaw.trim())
+            ? Math.round(Number(beatRaw.trim()) / 1e6) // ns -> ms
+            : null;
+        // role: mission-specified default is 'worker' unless the seat's own
+        // JSON says otherwise. None of the known caged seat JSON files carry
+        // a recursive-tier role today (recon confirmed: role field mirrors
+        // the seat name, e.g. "overseer"), so the honest read is 'worker' for
+        // every KNOWN_CAGED_WORKER_SEATS entry, 'unknown' for anything else.
+        const role = KNOWN_CAGED_WORKER_SEATS.has(name) ? 'worker' : 'unknown';
+        // Namespace the seat id (`cage-mvf:overseer`, not bare `overseer`): the
+        // caged copy of a seat file and the identically-named HOST seat (the
+        // oracle roster already carries a flat `overseer`/`ai-ops`/`aegis` row
+        // for the host-side Claude Code session) are genuinely different
+        // entities sharing a name. A bare id would collide in mergeCongress's
+        // seat-id dedup and silently drop the caged row entirely.
+        seats.push(mergedSeat({
+            seat: `${CAGE_ID}:${rec.seat || name}`,
+            cuid: rec.cuid ?? null,
+            claudeSid: rec.claudeSid ?? null,
+            // Cage seal means this process can't independently verify pid
+            // liveness inside the cage's own namespace — 'sealed' is the
+            // honest verdict (not 'alive'/'dead', which would be a guess).
+            verdict: 'sealed',
+            kind: 'session',
+            role,
+            pedal: rec.pedal ?? null,
+            host: rec.host ?? null,
+            pid: rec.hostPid ?? null,
+            parent_seat_id: CAGE_ROOT_SEAT_ID,
+            depth: 1,
+            cage_status: 'sealed',
+            cage_id: CAGE_ID,
+            startedAt: beatMs != null ? String(beatMs) : (rec.registeredAt ?? null),
+        }));
+    }
+    return seats;
+}
+
+// Build a full MergedSeat (CongressSeatSchema-shaped) from a partial set of
+// overrides, filling every other field with its honest-null default. Keeps
+// the two producers above from having to restate the full seat shape.
+function mergedSeat(overrides: Partial<MergedSeat> & { seat: string }): MergedSeat {
+    return {
+        seat: overrides.seat,
+        cuid: overrides.cuid ?? null,
+        claudeSid: overrides.claudeSid ?? null,
+        verdict: overrides.verdict ?? 'unverified',
+        kind: overrides.kind ?? null,
+        role: overrides.role ?? null,
+        pedal: overrides.pedal ?? null,
+        host: overrides.host ?? null,
+        pid: overrides.pid ?? null,
+        model: overrides.model ?? null,
+        warm: overrides.warm ?? null,
+        vramMB: overrides.vramMB ?? null,
+        currentWork: overrides.currentWork ?? null,
+        workStatus: overrides.workStatus ?? null,
+        startedAt: overrides.startedAt ?? null,
+        contextFill: overrides.contextFill ?? null,
+        health: overrides.health ?? null,
+        bottleneck: overrides.bottleneck ?? null,
+        lastAssistantText: overrides.lastAssistantText ?? null,
+        ts: overrides.ts ?? null,
+        renderSafe: overrides.renderSafe ?? null,
+        joinCollision: overrides.joinCollision ?? null,
+        cardCounts: overrides.cardCounts ?? null,
+        tailPreview: overrides.tailPreview ?? null,
+        parent_seat_id: overrides.parent_seat_id ?? null,
+        depth: overrides.depth ?? 0,
+        cage_status: overrides.cage_status ?? 'uncaged',
+        cage_id: overrides.cage_id ?? null,
+    };
+}
+
+// Merge the oracle's flat roster with the host-uncaged slice + the caged
+// congress. Additive only: existing oracle rows are never dropped or
+// mutated. Dedup key is `seat` (a seat already present in the oracle roster
+// wins — the oracle is the richer, verdict-derived source; the host/caged
+// readers here only fill in seats the oracle doesn't already carry, e.g. the
+// caged seats it structurally cannot see through the airlock).
+async function mergeCongress(oracleSeats: MergedSeat[]): Promise<MergedSeat[]> {
+    const seen = new Set(oracleSeats.map((s) => s.seat));
+    const merged = [...oracleSeats];
+
+    for (const s of readHostSeats()) {
+        if (seen.has(s.seat)) continue;
+        seen.add(s.seat);
+        merged.push(s);
+    }
+
+    // WSL read is the one truly fallible step (external process, cage may be
+    // sealed/stopped/absent) — isolate its failure so it can never take down
+    // the rest of the merge or the route.
+    let caged: MergedSeat[] = [];
+    try {
+        caged = await readCagedCongress();
+    } catch {
+        caged = []; // omit gracefully — never fabricate the caged slice
+    }
+    for (const s of caged) {
+        if (seen.has(s.seat)) continue;
+        seen.add(s.seat);
+        merged.push(s);
+    }
+
+    return merged;
+}
+
 export function congressRoutes(app: Fastify) {
 
     // GET /v1/congress/roster — the Phase 0 enrichment feed.
@@ -237,13 +535,27 @@ export function congressRoutes(app: Fastify) {
                             ts: z.number().nullable(),
                             renderSafe: z.boolean().nullable(),
                         }).nullable(),
+                        // Recursive-tier fields (2026-07-02, caged ai-ops design — see
+                        // docs/lane-happy-dev/schema-recursive-congress-seat.md). Mirrors
+                        // congressTypes.ts's CongressSeatSchema exactly. Every legacy oracle
+                        // row defaults to a depth-0, uncaged root; the caged-congress merge
+                        // below is the first real producer of non-default values.
+                        parent_seat_id: z.string().nullable(),
+                        depth: z.number(),
+                        cage_status: z.string(),
+                        cage_id: z.string().nullable(),
                     })),
                 })
             }
         },
         preHandler: app.authenticate
     }, async (request, reply) => {
-        const { ts, seats, stale } = readRoster();
+        const { ts, seats: oracleSeats, stale } = readRoster();
+        // Merge the host-uncaged slice + the sealed cage (read-only WSL peek,
+        // see readCagedCongress above) onto the oracle's flat roster. Both
+        // congresses surface in ONE response — the client's useCongressTree
+        // hydrates the parent_seat_id edges into the tree.
+        const seats = await mergeCongress(oracleSeats);
         return reply.send({
             ts,
             stale,
@@ -311,6 +623,12 @@ export function congressRoutes(app: Fastify) {
                             renderSafe: s.renderSafe ?? null,
                         }
                         : null),
+                // Recursive-tier fields — honest defaults for every legacy oracle row
+                // (null parent / depth 0 / uncaged), real values for merged host+caged rows.
+                parent_seat_id: s.parent_seat_id ?? null,
+                depth: s.depth ?? 0,
+                cage_status: s.cage_status ?? 'uncaged',
+                cage_id: s.cage_id ?? null,
             })),
         });
     });
