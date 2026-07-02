@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "happy-app-web",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--dir", "packages/happy-app", "run", "web:test"],
+      "port": 8081
+    }
+  ]
+}
