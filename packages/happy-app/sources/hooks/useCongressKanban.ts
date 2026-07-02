@@ -1,42 +1,42 @@
 import * as React from 'react';
 import { getCongressKanban } from '@/sync/apiCongressKanban';
-import { CongressKanbanCounts } from '@/sync/congressKanbanTypes';
+import { CongressFloorBoard } from '@/sync/congressKanbanTypes';
 import { useHonestFeed } from '@/hooks/useHonestFeed';
 
-// useCongressKanban — cockpit-v2 work-state grid (mission A3, kanban chips).
+// useCongressKanban — cockpit-v2 FLOORS plane (CKP-02 floors rework).
 //
-// Polls GET /v1/congress/kanban and returns per-seat {todo,doing,blocked,done}
-// counts keyed by seat id, mirroring useCongressRoster's/useBacklog's thin
-// adapter shape over the shared useHonestFeed primitive.
+// Polls GET /v1/congress/kanban and returns the building's per-floor
+// todo/doing/blocked/done boards, mirroring useCongressRelay's thin adapter
+// shape over the shared useHonestFeed primitive. The server keys by building
+// FLOOR (each floor's hive/tasks.json) — the old per-seat map here never had
+// server data that could satisfy it.
 //
-// The route may not exist server-side yet (see apiCongressKanban.ts) — a
-// 404/unreachable feed degrades to an empty map via useHonestFeed's LOUD-guard,
-// which LaneTile reads as "no chips" (honest omission), never zeros-as-real.
-// `hasContent` treats an empty seat-map as nothing-to-keep so a feed that goes
-// dark after publishing counts still escalates LOUD instead of quietly hiding.
+// A 404/unreachable/stale feed degrades to an empty list via useHonestFeed's
+// LOUD-guard, which FloorsPlane reads as an honest unreachable state, never
+// zeros-as-real. `hasContent` treats an empty floor list as nothing-to-keep so
+// a feed that goes dark after publishing boards still escalates LOUD.
 
-export interface CongressKanban {
-    seats: Map<string, CongressKanbanCounts>;
+export interface CongressFloors {
+    floors: CongressFloorBoard[];
     unreachable: boolean;
 }
 
-const EMPTY_SEATS = new Map<string, CongressKanbanCounts>();
+const EMPTY_FLOORS: CongressFloorBoard[] = [];
 
-export function useCongressKanban(): CongressKanban {
-    const { data, unreachable } = useHonestFeed<Map<string, CongressKanbanCounts>>(
+export function useCongressKanban(): CongressFloors {
+    const { data, unreachable } = useHonestFeed<CongressFloorBoard[]>(
         async (credentials) => {
             const response = await getCongressKanban(credentials);
             if (response.stale) {
                 return { stale: true, data: null };
             }
-            const seats = new Map<string, CongressKanbanCounts>(Object.entries(response.seats));
-            return { stale: false, data: seats };
+            return { stale: false, data: response.floors };
         },
-        { hasContent: (seats) => seats.size > 0 },
+        { hasContent: (floors) => floors.length > 0 },
     );
 
     return React.useMemo(() => ({
-        seats: data ?? EMPTY_SEATS,
+        floors: data ?? EMPTY_FLOORS,
         unreachable,
     }), [data, unreachable]);
 }

@@ -26,14 +26,14 @@ export async function getCongressKanban(credentials: AuthCredentials): Promise<C
         });
 
         if (!response.ok) {
-            return { ts: null, stale: true, seats: {} };
+            return { ts: null, stale: true, floors: [] };
         }
 
         const data = await response.json();
         const parsed = CongressKanbanResponseSchema.safeParse(data);
         if (!parsed.success) {
             console.error('Failed to parse congress kanban response:', parsed.error);
-            return { ts: null, stale: true, seats: {} };
+            return { ts: null, stale: true, floors: [] };
         }
 
         return parsed.data;

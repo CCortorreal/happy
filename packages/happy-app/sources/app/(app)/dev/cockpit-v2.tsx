@@ -32,7 +32,7 @@ import { useHeartbeat } from '@/hooks/useHeartbeat';
 import { useBacklog } from '@/hooks/useBacklog';
 import { useCongressKanban } from '@/hooks/useCongressKanban';
 import { useCongressRelay } from '@/hooks/useCongressRelay';
-import { CongressKanbanCounts } from '@/sync/congressKanbanTypes';
+import { CongressKanbanCounts, CongressFloorBoard } from '@/sync/congressKanbanTypes';
 import { CongressRelayItem } from '@/sync/congressRelayTypes';
 import { VramGauge } from '@/components/VramGauge';
 import { DiskGauge } from '@/components/DiskGauge';
@@ -688,7 +688,7 @@ function LaneHands({ sessionId }: { sessionId: string }) {
     );
 }
 
-function LaneTile({ row, rosterUnreachable, selected, workers, laneIndex, depth, kanban }: {
+function LaneTile({ row, rosterUnreachable, selected, workers, laneIndex, depth }: {
     row: LaneRow;
     rosterUnreachable: boolean;
     selected: boolean;
@@ -704,10 +704,9 @@ function LaneTile({ row, rosterUnreachable, selected, workers, laneIndex, depth,
     // nesting. Backward-compat: existing flat-list callers pass 0 (or omit if
     // TypeScript allows) and get the identical un-indented render.
     depth: number;
-    // Mission A3: this lane's kanban counts keyed by its seat id (undefined
-    // when the lane has no congress seat, or the seat isn't in the kanban
-    // feed's map — both render as absent chips, never zeros).
-    kanban: CongressKanbanCounts | undefined;
+    // (CKP-02) per-seat kanban is GONE: the server keys boards by building
+    // floor, so seat lanes never had a legitimate count to show — the
+    // building's boards live in FloorsPlane now.
 }) {
     const { theme } = useUnistyles();
     const d = useDensity();
@@ -789,7 +788,6 @@ function LaneTile({ row, rosterUnreachable, selected, workers, laneIndex, depth,
                             {workLine}
                         </Text>
                     </View>
-                    <KanbanChips counts={kanban} typeScale={d.typeScale} />
                 </View>
                 <Pressable
                     hitSlop={8}
@@ -908,7 +906,6 @@ function TheWorkPlane({ selectedSessionId, mockRoster }: {
     const d = useDensity();
     const data = useVisibleSessionListViewData();
     const { sessions: roster, workers, unreachable: rosterUnreachable } = useCongressRoster();
-    const { seats: kanbanSeats } = useCongressKanban();
     const tree = useCongressTree(mockRoster ?? null);
 
     // Flatten the view-model to a plain lane list — THE WORK is the living center,
@@ -971,7 +968,6 @@ function TheWorkPlane({ selectedSessionId, mockRoster }: {
                 workers={node.children.length === 0 && liveRow ? (workersByLane.get(liveRow.session.id) ?? []) : []}
                 laneIndex={laneIndex.i}
                 depth={node.depth}
-                kanban={kanbanSeats.get(node.seat.seat)}
             />,
         );
         laneIndex.i += 1;
@@ -1060,7 +1056,6 @@ function TheWorkPlane({ selectedSessionId, mockRoster }: {
                     workers={workersByLane.get(row.session.id) ?? []}
                     laneIndex={i}
                     depth={0}
-                    kanban={row.seat ? kanbanSeats.get(row.seat.seat) : undefined}
                 />
             ))}
             {ungroupedWorkers.length > 0 ? (
@@ -1271,6 +1266,89 @@ function RelayPlane() {
 }
 
 // ============================================================================
+// PLANE 5 — FLOORS (CKP-02, Carlos's "go big" call). The building's per-floor
+// kanban boards, first-class: each floor's hive/tasks.json counts rendered as
+// the same chips the lanes once faked. Honest-state throughout: an absent
+// offices root (building down) is FeedUnreachable, a boardless-but-readable
+// root is a quiet line, and every floor row carries its board's mtime age so
+// a stale board can't masquerade as a live one. Phone collapses to
+// tap-to-expand, mirroring RelayPlane's idiom.
+// ============================================================================
+
+// Compact relative age for a board mtime — glanceable staleness, not a clock.
+function boardAgeLabel(tsMs: number): string {
+    const ageSec = Math.max(0, Math.round((Date.now() - tsMs) / 1000));
+    if (ageSec < 60) return `${ageSec}s`;
+    if (ageSec < 3600) return `${Math.round(ageSec / 60)}m`;
+    if (ageSec < 86400) return `${Math.round(ageSec / 3600)}h`;
+    return `${Math.round(ageSec / 86400)}d`;
+}
+
+function FloorRow({ board, typeScale }: { board: CongressFloorBoard; typeScale: number }) {
+    return (
+        <View style={styles.floorRow}>
+            <Text style={[styles.floorRowName, { fontSize: scaled(12.5, typeScale) }]} numberOfLines={1}>
+                {board.floor}
+            </Text>
+            <KanbanChips counts={board} typeScale={typeScale} />
+            <Text style={[styles.floorRowAge, { fontSize: scaled(10.5, typeScale) }]}>
+                {board.total} task{board.total === 1 ? '' : 's'} · board {boardAgeLabel(board.ts)} old
+            </Text>
+        </View>
+    );
+}
+
+function FloorsPlane() {
+    const d = useDensity();
+    const { floors, unreachable } = useCongressKanban();
+    const [phoneExpanded, setPhoneExpanded] = React.useState(false);
+
+    // Honest empty: offices root readable but no floor has a board — the calm
+    // all-clear line, same pattern as RelayPlane's quiet state.
+    if (floors.length === 0 && !unreachable) {
+        return (
+            <View style={[styles.plane, { marginBottom: d.planeGap }]}>
+                <Text style={[styles.planeTitle, { fontSize: scaled(13, d.typeScale) }]}>FLOORS</Text>
+                <View style={styles.quietLineRow}>
+                    <StatusDot color={GREY} size={6} />
+                    <Text style={[styles.quietLine, { fontSize: scaled(13, d.typeScale) }]}>No floor boards</Text>
+                </View>
+            </View>
+        );
+    }
+
+    if (floors.length === 0 && unreachable) {
+        return (
+            <View style={[styles.plane, { marginBottom: d.planeGap }]}>
+                <Text style={[styles.planeTitle, { fontSize: scaled(13, d.typeScale) }]}>FLOORS</Text>
+                <View style={[styles.unreachableCard, { borderRadius: d.cardRadius, paddingVertical: d.cardPaddingV, paddingHorizontal: d.cardPaddingH }]}>
+                    <FeedUnreachable message="can't reach the floor boards" />
+                </View>
+            </View>
+        );
+    }
+
+    if (d.density === 'phone' && !phoneExpanded) {
+        return (
+            <View style={[styles.plane, { marginBottom: d.planeGap }]}>
+                <Pressable onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setPhoneExpanded(true); }}>
+                    <Text style={[styles.planeTitle, { fontSize: scaled(13, d.typeScale) }]}>FLOORS · {floors.length} · tap to expand</Text>
+                </Pressable>
+            </View>
+        );
+    }
+
+    return (
+        <View style={[styles.plane, { marginBottom: d.planeGap }]}>
+            <Pressable disabled={d.density !== 'phone'} onPress={() => setPhoneExpanded(false)}>
+                <Text style={[styles.planeTitle, { fontSize: scaled(13, d.typeScale) }]}>FLOORS · {floors.length}</Text>
+            </Pressable>
+            {floors.map((board) => <FloorRow key={board.floor} board={board} typeScale={d.typeScale} />)}
+        </View>
+    );
+}
+
+// ============================================================================
 // ROOT — three planes, top to bottom. THE WORK is the default view (no black
 // void, no hand-pick-a-session-first gate).
 // ============================================================================
@@ -1413,6 +1491,7 @@ export function CockpitV2Screen() {
                     <NeedsYouPlane />
                     <TheWorkPlane mockRoster={mockOn ? MOCK_RECURSIVE_ROSTER : null} />
                     <VitalsStrip />
+                    <FloorsPlane />
                     <RelayPlane />
                 </View>
             </ScrollView>
@@ -1953,6 +2032,24 @@ const styles = StyleSheet.create((theme) => ({
         lineHeight: 17,
         color: theme.colors.text,
         marginBottom: 2,
+        ...Typography.mono(),
+    },
+
+    // --- FLOORS plane (CKP-02) ---
+    floorRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginBottom: 4,
+    },
+    floorRowName: {
+        minWidth: 72,
+        color: theme.colors.text,
+        ...Typography.default('semiBold'),
+    },
+    floorRowAge: {
+        marginLeft: 'auto',
+        color: theme.colors.textSecondary,
         ...Typography.mono(),
     },
 }));

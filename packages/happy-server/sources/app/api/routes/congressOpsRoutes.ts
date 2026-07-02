@@ -540,11 +540,16 @@ export function congressOpsRoutes(app: Fastify) {
     // GET /v1/congress/kanban — per-floor work-item counts read from each
     // floor's hive/tasks.json (the same file the building's tile projects).
     // Read-only; a floor without a readable board is honestly OMITTED, never
-    // served as fake zeros.
+    // served as fake zeros. Envelope matches the relay route's client-contract
+    // convention (CKP-02): { ts, stale, floors } — ts = newest board mtime,
+    // stale = the offices root itself was unreadable (building unreachable,
+    // distinct from readable-but-boardless which is a fresh empty list).
     app.get('/v1/congress/kanban', {
         schema: {
             response: {
                 200: z.object({
+                    ts: z.number().nullable(),
+                    stale: z.boolean(),
                     floors: z.array(z.object({
                         floor: z.string(),
                         todo: z.number(),
@@ -566,7 +571,8 @@ export function congressOpsRoutes(app: Fastify) {
                 .filter((d) => d.isDirectory())
                 .map((d) => d.name);
         } catch {
-            return reply.send({ floors: [] }); // offices root absent → honest empty
+            // offices root absent/unreadable → the building itself is unreachable
+            return reply.send({ ts: null, stale: true, floors: [] });
         }
         const floors: Array<{ floor: string; todo: number; doing: number; blocked: number; done: number; total: number; ts: number }> = [];
         for (const floor of floorDirs) {
@@ -596,7 +602,11 @@ export function congressOpsRoutes(app: Fastify) {
             }
             floors.push({ floor, ...counts, total: tasks.length, ts: Math.round(mtimeMs) });
         }
-        return reply.send({ floors });
+        return reply.send({
+            ts: floors.length > 0 ? Math.max(...floors.map((f) => f.ts)) : null,
+            stale: false,
+            floors,
+        });
     });
 
     // GET /v1/congress/relay?limit=N — last N inter-seat relay-log entries,

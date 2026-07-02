@@ -1,22 +1,22 @@
 import { z } from 'zod';
 
-// Congress kanban types (cockpit-v2 work-state grid, 2026-07-02).
+// Congress kanban types (cockpit-v2, 2026-07-02; floors rework CKP-02).
 //
-// Mirrors a future GET /v1/congress/kanban response. Mission A3: per-lane
-// todo/doing/blocked/done counts for the compact kanban chips on each
-// LaneTile — the SAME shape family as the roster's `cardCounts` slot
-// (congressTypes.ts's CongressCardCountsSchema), just served as its own
-// keyed-by-seat feed rather than embedded per-roster-row, since the roster
-// route has no oracle-side tasks feed to back it yet (see congressRoutes.ts's
-// cardCounts comment — honest-null there).
+// Mirrors GET /v1/congress/kanban. The server keys work-item counts by
+// building FLOOR (each floor's hive/tasks.json — atlas, crew, spine…), not by
+// congress seat: the original seat-keyed schema here had no server data that
+// could ever satisfy it (every poll failed parse — the CKP-02 half of the
+// error storm). Carlos's call (2026-07-02): floors are first-class — the
+// cockpit renders the building's boards in their own FLOORS plane, and seat
+// lanes no longer pretend to have per-seat kanban.
 //
-// Route does not exist server-side yet (grepped: no /v1/congress/kanban in
-// congressRoutes.ts as of this commit) — this client codes against the wire
-// contract now, same as apiCongress.ts's getCongressRoster did before the
-// roster route landed. Until the route ships, getCongressKanban's non-OK
-// fallback (stale:true, seats:{}) makes every lane's chips honestly absent
-// (never zeros-as-real) via useHonestFeed's three-state discipline.
+// Envelope matches congressRelayTypes.ts's convention: { ts, stale, floors },
+// numeric epoch-ms timestamps throughout. `stale: true` means the offices root
+// itself was unreachable (building gone) — distinct from a readable-but-
+// boardless root, which is a fresh empty `floors: []`.
 
+// Chip-shaped counts — consumed by KanbanChips. Nullable per-lane values keep
+// the honest-omission discipline (a chip renders only for a real count).
 export const CongressKanbanCountsSchema = z.object({
     todo: z.number().nullable(),
     doing: z.number().nullable(),
@@ -24,13 +24,23 @@ export const CongressKanbanCountsSchema = z.object({
     done: z.number().nullable(),
 });
 
-// Keyed by `seat` (the same congress seat id the roster rows carry), not an
-// array — a lane tile looks up its own seat's counts by direct key, no scan.
+export const CongressFloorBoardSchema = z.object({
+    floor: z.string(),
+    todo: z.number(),
+    doing: z.number(),
+    blocked: z.number(),
+    done: z.number(),
+    total: z.number(),
+    // board file mtime (epoch ms) — the honest-staleness signal per floor
+    ts: z.number(),
+});
+
 export const CongressKanbanResponseSchema = z.object({
     ts: z.number().nullable(),
     stale: z.boolean(),
-    seats: z.record(z.string(), CongressKanbanCountsSchema),
+    floors: z.array(CongressFloorBoardSchema),
 });
 
 export type CongressKanbanCounts = z.infer<typeof CongressKanbanCountsSchema>;
+export type CongressFloorBoard = z.infer<typeof CongressFloorBoardSchema>;
 export type CongressKanbanResponse = z.infer<typeof CongressKanbanResponseSchema>;
