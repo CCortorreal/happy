@@ -38,21 +38,30 @@ The `:3005` happy-server ran ~18h under `tsx` (no `--watch`) in an elevated cons
 - **Accept:** make a trivial server edit, observe it live within ~5s with no manual restart. Confirmed over 2 edits.
 - **Dep:** blocks live verification of every server-side ticket (CKP-01/02/03/04/22).
 
-### CKP-01 · RELAY plane: schema mismatch · `bug` · Critical · PR
-> **PR ready 2026-07-02 ~12:25** — branch `fix/ckp-01-relay-schema` @ `f4d633e`, awaiting
-> Carlos merge. Server now sends the client wire shape ({ts, stale, items[{id, ts:epochMs,
-> …}]}, djb2 content id doubles as merge-dedupe key). **Over-time evidence (231s window,
-> instrumented live):** 0 relay parse errors ever (kanban control fired 86× — instrument
-> proven), `RELAY · 50` rendered + held, never unreachable, no dev toast.
+### CKP-01 · RELAY plane: schema mismatch · `bug` · Critical · DONE
+> **DONE 2026-07-02 ~12:55 — Carlos blessed in place** (commits `f4d633e`+`5929a66`
+> landed on lane/happy-dev via the wrong-repo branch slip, disposition: keep). Server
+> sends the client wire shape ({ts, stale, items[{id, ts:epochMs, …}]}, djb2 content id
+> doubles as merge-dedupe key). **Over-time evidence (231s window, instrumented live):**
+> 0 relay parse errors ever (kanban control fired 86× — instrument proven), `RELAY · 50`
+> rendered + held, never unreachable, no dev toast. Stayed green through two later 5-min
+> windows (CKP-03 verification rode the same hook).
 Server sends `{ ts: ISO-string, from, to, kind, excerpt }`; client `CongressRelayItemSchema` requires an `id` (absent) and a **numeric** `ts` (gets a string). Parse rejected → "can't reach the relay log" + climbing error toast.
 - **Files:** `packages/happy-server/.../congressOpsRoutes.ts` (relay builder), `packages/happy-app/sources/sync/congressRelayTypes.ts`.
 - **Fix:** server already computes `epochMs` — send that as `ts`; add `id` (hash of ts+from+excerpt).
 - **Accept:** RELAY plane renders real entries; **0 relay parse errors over 3 min** of observation (currently ~12/min).
 
-### CKP-02 · KANBAN chips: wrong entity, not just wrong shape · `bug`/`decision` · Critical · OPEN
+### CKP-02 · KANBAN chips: wrong entity, not just wrong shape · `bug`/`decision` · Critical · PR
 Server keys counts by building **floor** (atlas, crew, spine…); cockpit lanes are congress **seats**. Even with shape fixed, floor-counts have no seat to attach to.
-- **Decision needed (Carlos):** (a) drop kanban chips from congress-seat lanes, or (b) add a separate "floors" section that renders the building's boards.
+- **Decision (Carlos, 2026-07-02): GO BIG — option (b).** Floors are first-class.
 - **Accept:** **0 kanban parse errors over 3 min**; chips render only where data legitimately maps.
+> **PR ready 2026-07-02 ~13:20** — branch `fix/ckp-02-floors-section` @ `1d9e357` (stacked on
+> CKP-03's branch). New FLOORS plane renders the building's boards (floor + chips + total +
+> honest board-mtime age); seat lanes drop kanban entirely; server envelope matches the relay
+> convention. **Evidence (213s window):** kanban errors **0** (was 86–124/window through the
+> same hook), relay 0, other 0 — first fully-silent console of the day. `FLOORS · 5`
+> (atlas/crew/hestia/main/spine, main 45m fresh w/ 87 tasks, others honestly 16–21d stale)
+> the only rendered state.
 
 ### CKP-03 · Live-count decays 9→0 and pins at zero · `bug` · Critical · PR
 > **PR ready 2026-07-02 ~12:50** — branch `fix/ckp-03-live-count-decay` @ `9c8ca8a`. Root
@@ -185,3 +194,5 @@ DESKTOP/DECK/PHONE/MOCK RECURSIVE ROSTER sit as primary tabs; "Mock roster" is a
 
 - 2026-07-02 — Board created from the live audit + over-time instrumented observation. 22 tickets. Keystone = CKP-21 (server under watch). Nothing merged yet.
 - 2026-07-02 ~12:08 — **CKP-21 DONE** (tick 1 of the /loop). infra `57f53c7` (tsx watch, both launch paths) + Carlos's elevated restart. Verified over time: 2 probe edits live ≤~5s (pid lineage 45904→46460→48452), 4-cycle hold stable, 4 reloads zero crash-loops. Keystone landed — the board below is now live-verifiable.
+- 2026-07-02 ~12:55 — **CKP-01 DONE** (tick 2, Carlos-blessed). Relay speaks the client contract; 0 parse errors across 231s + two later 5-min windows. First fix to ride CKP-21's hot-reload (zero elevated hands). Process slip owned: commits landed on the lane via a wrong-repo branch; memory `git-ops-need-explicit-cd` banked.
+- 2026-07-02 ~12:55 — **CKP-02 verdict (Carlos): GO BIG** — option (b), a dedicated floors section rendering the building's boards. In flight.
