@@ -150,8 +150,15 @@ const CongressRosterFileSchema = z.object({
     // so the whole-file parse never fails on it (a number-only schema here was
     // silently emptying the entire roster -> the live Hearthside never formed).
     ts: z.union([z.string(), z.number()]).nullish(),
-    roster: z.array(CongressSeatSchema).nullish(),
-    seats: z.array(CongressSeatSchema).nullish(),
+    // Rows are parsed INDIVIDUALLY in readRoster (z.unknown here), not as
+    // z.array(CongressSeatSchema): with the array-typed schema, ONE malformed
+    // row failed the whole-file safeParse and collapsed the entire roster to
+    // stale-empty — the 2026-07-02 dark-roster root cause (the oracle published
+    // two anonymous session rows with seat:null and every real seat vanished
+    // from the surface). Same lesson as the seat-file reader below: one bad
+    // row must not drop the rest.
+    roster: z.array(z.unknown()).nullish(),
+    seats: z.array(z.unknown()).nullish(),
 });
 
 // Normalize the oracle `ts` (ISO string or epoch number) to epoch ms for the
@@ -195,10 +202,22 @@ function readRoster(): { ts: number | null; seats: z.infer<typeof CongressSeatSc
         return { ts: null, seats: [], stale: true };
     }
 
+    // Row-level salvage: parse each row on its own so one malformed row (e.g.
+    // the oracle's anonymous seat:null session rows) drops JUST that row, never
+    // the whole roster. If rows were present but NONE parsed, that's a broken
+    // feed — honest-stale so the client keeps last-good; an actually-empty
+    // roster stays a fresh empty roster.
+    const rows = parsed.data.roster ?? parsed.data.seats ?? [];
+    const seats: z.infer<typeof CongressSeatSchema>[] = [];
+    for (const row of rows) {
+        const rowParsed = CongressSeatSchema.safeParse(row);
+        if (!rowParsed.success) continue;
+        seats.push(rowParsed.data);
+    }
     return {
         ts: normalizeTs(parsed.data.ts),
-        seats: parsed.data.roster ?? parsed.data.seats ?? [],
-        stale: false,
+        seats,
+        stale: rows.length > 0 && seats.length === 0,
     };
 }
 
