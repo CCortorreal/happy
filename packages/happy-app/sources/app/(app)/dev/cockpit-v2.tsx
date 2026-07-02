@@ -45,6 +45,34 @@ import { BacklogGauge } from '@/components/BacklogGauge';
 // hard-coded green. Reuses the SAME derivation SessionsList.tsx uses (congressHealthStatus/
 // voiceThought/contextPressure are now exported from there for exactly this reuse — no
 // forked copy of the honest-state logic). Dev page → i18n-exempt.
+//
+// Slice 2 (the trust-debt floor, spec §5) closed IN THIS FILE:
+//   - G10/G14: laneHonestState's plain-session fallback painted an idle-but-connected
+//     ('waiting') lane the SAME green as an actively-working one — fixed to GREY, same
+//     as every other idle read (deriveLiveness's 'idle' verdict, disconnected, etc.).
+//   - G11: the identity sub-line silently fell back to a raw cwd-path fragment when a
+//     session had no congress seat to reconcile a role against. Now says so honestly
+//     ("no seat role — not a congress lane") instead of quietly presenting a path
+//     fragment as if it were an identity — the exact confusion that cost a live-overseer
+//     archive. (The primary title row, session.name, was already role/summary-derived,
+//     never cwd — verified via getSessionName in sessionUtils.ts.)
+//   - G13: verified, not re-fixed here — useHonestFeed.ts (shared, already reused by
+//     every feed this file polls) already races each poll against a 4s timeout
+//     (POLL_TIMEOUT_MS) with unreachableAfter=3, so a HUNG backend surfaces LOUD within
+//     ~12s. True per-poll AbortController cancellation of the underlying fetch (vs. just
+//     racing/ignoring it) would require threading a signal through every apiXxx.ts
+//     fetcher + the shared `backoff()` retry wrapper in utils/time.ts — out of this
+//     dev-route lane's scope since those are shared by the live surface too; flagged,
+//     not silently skipped.
+//   - G17/G18: VitalsStrip's dot collapsed "no successful read yet" (first paint / a
+//     boot still binding) and "confirmed dead after a good read" into the same alarm
+//     red. Split into BINDING (grey, "reading…") vs DEAD (red) vs DEGRADED (amber) vs
+//     healthy (green) — never a calm green over an unknown, never the same red for
+//     "still starting up" as for "confirmed gone."
+//   - G20: gauge/vitals reserved heights were already in place (VramGauge/DiskGauge/
+//     ContextGauge/BacklogGauge minHeight + FeedUnreachable's minHeight prop, laneTile's
+//     minHeight: 64) from the shared-hook work that predates this dev route; verified
+//     still wired correctly, not re-done.
 
 const ACCENT_GATE = '#E5484D';
 const ACCENT_ROUTINE = '#9B7EDE';
@@ -338,10 +366,14 @@ function laneHonestState(seat: CongressSeat | undefined, rosterUnreachable: bool
     if (!seat) {
         // Plain (non-congress) session — no oracle to reconcile against. Fall back to
         // the session's own connection state, still fail-honest (never a bare "online").
+        // G10/G14: 'waiting' (connected, not thinking, no pending permission) is IDLE,
+        // not working — it must read the same GREY as every other idle state below.
+        // Painting it GREEN made an idle lane indistinguishable from an actively-working
+        // one (the exact "online + not-actually-doing-anything" lie the spec bans).
         if (session.state === 'thinking') return { label: 'working', color: GREEN };
         if (session.state === 'permission_required') return { label: 'blocked', color: AMBER };
         if (session.state === 'disconnected') return { label: 'idle', color: GREY };
-        return { label: 'idle', color: GREEN };
+        return { label: 'idle', color: GREY };
     }
     const { verdict } = deriveLiveness(seat, rosterUnreachable);
     if (verdict === 'unverified') return { label: 'unverified', color: GREY };
@@ -368,7 +400,12 @@ function LaneTile({ row, rosterUnreachable, selected, workers }: {
     const { session, seat } = row;
     const honest = laneHonestState(seat, rosterUnreachable, session);
     const thought = seat ? voiceThought(seat) : null;
-    const identity = seat ? congressIdentity(seat) : (session.path?.split(/[/\\]/).filter(Boolean).pop() ?? session.subtitle);
+    // G11: label by seat ROLE, never by cwd. congressIdentity(seat) already reads
+    // role+pedal off the roster — the honest label for a congress lane. A plain
+    // (non-congress) session has no role to reconcile against; rather than silently
+    // smuggling a cwd fragment in as if it were an identity (the exact "session label
+    // = cwd, not role" mistake that cost Carlos a live-overseer archive), say so plainly.
+    const identity = seat ? congressIdentity(seat) : 'no seat role — not a congress lane';
     const pressure = seat ? contextPressure(seat) : null;
     const health = seat ? congressHealthStatus(seat, rosterUnreachable) : null;
 
@@ -523,8 +560,20 @@ function TheWorkPlane({ selectedSessionId }: { selectedSessionId?: string }) {
 
 type VitalKey = 'vram' | 'disk' | 'context' | 'backlog';
 
-function vitalDotColor(unreachable: boolean, hasWarning: boolean): string {
-    if (unreachable) return RED;
+// G17/G18 folded in: a blanket "unreachable -> red" collapses two different honest
+// states into one alarm color. `hasData` distinguishes them:
+//   - unreachable && hasData   -> DEAD.       This feed had a good read and lost it.
+//   - unreachable && !hasData  -> BINDING.     No successful read has landed YET (first
+//     paint / a fresh boot's poll hasn't settled) — genuinely unknown, not confidently
+//     dead, so it must not paint the same alarm red as a confirmed-dead feed. It must
+//     ALSO never paint a calm green (that would be the exact G10 lie this floor exists
+//     to close) — GREY (the same "can't verify yet" tone `deriveLiveness` uses) is the
+//     honest middle state.
+//   - !unreachable && warning  -> RECOVERING/DEGRADED (amber) — reachable, values read,
+//     but something in the data itself needs a look.
+//   - !unreachable && !warning -> healthy green, backed by an actual fresh read.
+function vitalDotColor(unreachable: boolean, hasWarning: boolean, hasData: boolean): string {
+    if (unreachable) return hasData ? RED : GREY;
     if (hasWarning) return AMBER;
     return GREEN;
 }
@@ -541,32 +590,35 @@ function VitalsStrip() {
     const contextWarn = !!heartbeat.view && (heartbeat.view.anyOverdue || heartbeat.view.seats.some((s) => s.inDangerZone || s.gateState === 'FIRE' || s.gateState === 'unreadable'));
     const backlogWarn = !!backlog.view && backlog.view.total > 0 && backlog.view.perSeat.some((s) => (s.oldestAgeSec ?? 0) >= 300);
 
+    // G17/G18: "binding" (no successful read yet — first paint, or a boot still in
+    // progress) reads as an honest "reading..." rather than silently sharing text with
+    // either the healthy '—' or the confirmed-dead "can't read X" copy.
     const vramSummary = vram.unreachable
-        ? "can't read the GPU"
+        ? (vram.view ? "can't read the GPU" : 'reading…')
         : vram.view
             ? `${Math.round((vram.view.usedMB / Math.max(1, vram.view.totalMB)) * 100)}% used`
             : '—';
     const diskSummary = disk.unreachable
-        ? "can't read disk"
+        ? (disk.view ? "can't read disk" : 'reading…')
         : disk.view
             ? (diskWarn ? `${disk.view.boxes.filter((b) => !b.reachable).length + disk.view.boxes.reduce((n, b) => n + b.drives.filter((d) => d.status !== 'green').length, 0)} to watch` : 'all disks healthy')
             : '—';
     const contextSummary = heartbeat.unreachable
-        ? "can't read heartbeat"
+        ? (heartbeat.view ? "can't read heartbeat" : 'reading…')
         : heartbeat.view
             ? (heartbeat.view.anyOverdue ? 'overdue' : contextWarn ? 'seat near gate' : 'all seats calm')
             : '—';
     const backlogSummary = backlog.unreachable
-        ? "can't read backlog"
+        ? (backlog.view ? "can't read backlog" : 'reading…')
         : backlog.view
             ? (backlog.view.total > 0 ? `${backlog.view.total} queued` : 'backlog clear')
             : '—';
 
     const dots: { key: VitalKey; label: string; color: string; summary: string }[] = [
-        { key: 'vram', label: 'VRAM', color: vitalDotColor(vram.unreachable, vramWarn), summary: vramSummary },
-        { key: 'disk', label: 'DISK', color: vitalDotColor(disk.unreachable, diskWarn), summary: diskSummary },
-        { key: 'context', label: 'CTX', color: vitalDotColor(heartbeat.unreachable, contextWarn), summary: contextSummary },
-        { key: 'backlog', label: 'BKLG', color: vitalDotColor(backlog.unreachable, backlogWarn), summary: backlogSummary },
+        { key: 'vram', label: 'VRAM', color: vitalDotColor(vram.unreachable, vramWarn, !!vram.view), summary: vramSummary },
+        { key: 'disk', label: 'DISK', color: vitalDotColor(disk.unreachable, diskWarn, !!disk.view), summary: diskSummary },
+        { key: 'context', label: 'CTX', color: vitalDotColor(heartbeat.unreachable, contextWarn, !!heartbeat.view), summary: contextSummary },
+        { key: 'backlog', label: 'BKLG', color: vitalDotColor(backlog.unreachable, backlogWarn, !!backlog.view), summary: backlogSummary },
     ];
 
     return (
