@@ -637,19 +637,26 @@ function LaneHands({ sessionId }: { sessionId: string }) {
     return (
         <View style={styles.laneHands}>
             <View style={[styles.laneHandsRow, { gap: Math.max(6, Math.round(d.cardGap * 0.8)) }]}>
-                <TextInput
-                    style={[
-                        styles.laneHandsInput,
-                        { fontSize: scaled(13, d.typeScale), minHeight: d.minTouchSize },
-                    ]}
-                    value={draft}
-                    onChangeText={setDraft}
-                    placeholder="steer — inject context, no keystrokes"
-                    placeholderTextColor={theme.colors.textSecondary}
-                    onSubmitEditing={submitSteer}
-                    returnKeyType="send"
-                    blurOnSubmit={false}
-                />
+                {/* No-op Pressable wrapper: on web a raw TextInput's click BUBBLES to
+                    the tile's outer Pressable and navigates to the session instead of
+                    focusing the input (dogfood-caught defect). A nested Pressable
+                    swallows the press the same way the halt button and the expand
+                    chevron already do; the DOM input still focuses natively. */}
+                <Pressable style={styles.laneHandsInputWrap} onPress={() => { }}>
+                    <TextInput
+                        style={[
+                            styles.laneHandsInput,
+                            { fontSize: scaled(13, d.typeScale), minHeight: d.minTouchSize },
+                        ]}
+                        value={draft}
+                        onChangeText={setDraft}
+                        placeholder="steer — inject context, no keystrokes"
+                        placeholderTextColor={theme.colors.textSecondary}
+                        onSubmitEditing={submitSteer}
+                        returnKeyType="send"
+                        blurOnSubmit={false}
+                    />
+                </Pressable>
                 <Pressable
                     onPress={onHaltPress}
                     style={[
@@ -837,6 +844,19 @@ function LaneTile({ row, rosterUnreachable, selected, workers, laneIndex, depth,
                                 {item.text}
                             </Text>
                         ))
+                    )}
+
+                    {/* LANE HANDS (Mission A1): steer + gated halt, expanded tile only.
+                        Same renderSafe gate as the tail — a privacy-gated seat is not
+                        steerable from this surface (no steering from a lock-screen
+                        posture). A SYNTH: seat-only row has no conversable session, so
+                        it gets an honest line instead of a dead input. */}
+                    {!renderSafeGate ? null : session.id.startsWith('SYNTH:') ? (
+                        <Text style={[styles.laneTailMissing, { fontSize: scaled(12, d.typeScale), marginTop: 8 }]}>
+                            seat-only lane — no live session to steer or halt
+                        </Text>
+                    ) : (
+                        <LaneHands sessionId={session.id} />
                     )}
                 </View>
             ) : null}
@@ -1733,6 +1753,66 @@ const styles = StyleSheet.create((theme) => ({
         color: theme.colors.textSecondary,
         fontStyle: 'italic',
         ...Typography.default(),
+    },
+
+    // --- LANE HANDS (Mission A1: steer + gated halt) ---
+    laneHands: {
+        marginTop: 10,
+    },
+    laneHandsRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    laneHandsInputWrap: {
+        flex: 1,
+        minWidth: 0,
+    },
+    laneHandsInput: {
+        width: '100%',
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: theme.colors.divider,
+        borderRadius: 8,
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        fontSize: 13,
+        color: theme.colors.text,
+        backgroundColor: theme.colors.groupped.background,
+        ...Typography.default(),
+    },
+    laneHandsHalt: {
+        borderRadius: 8,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: theme.colors.divider,
+        backgroundColor: 'transparent',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: 12,
+    },
+    laneHandsHaltArmed: {
+        // Armed = destructive-red, the codebase's one alarm color (RED/ACCENT_GATE).
+        backgroundColor: RED,
+        borderColor: RED,
+    },
+    laneHandsHaltText: {
+        fontSize: 12,
+        color: theme.colors.textSecondary,
+        ...Typography.default('semiBold'),
+    },
+    laneHandsHaltTextArmed: {
+        color: '#FFFFFF',
+    },
+    laneHandsChip: {
+        marginTop: 6,
+        fontSize: 11,
+        color: theme.colors.textSecondary,
+        fontStyle: 'italic',
+        ...Typography.default(),
+    },
+    laneHandsChipFailed: {
+        marginTop: 6,
+        fontSize: 11,
+        color: RED,
+        ...Typography.default('semiBold'),
     },
 
     // --- GOD -> WORKER fan-out (munder FloorTile pattern: god + worker roster) ---
