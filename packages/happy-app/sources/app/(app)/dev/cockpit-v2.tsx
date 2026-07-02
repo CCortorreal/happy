@@ -884,7 +884,9 @@ function synthesizeSessionRowFromSeat(seat: CongressSeat): SessionRowData {
         flavor: null,
         state: 'waiting',
         hasDraft: false,
-        active: seat.verdict === 'alive',
+        // Reconciled, not raw (PR-14's rule): the old `seat.verdict === 'alive'`
+        // compared lowercase against the oracle's UPPERCASE vocab — always false.
+        active: deriveLiveness(seat, false).verdict === 'alive',
         machineId: null,
         path: null,
         homeDir: null,
@@ -1333,13 +1335,22 @@ function CockpitHeader() {
     const d = useDensity();
     const { sessions, workers, unreachable } = useCongressRoster();
 
-    const { liveCount, totalCount } = React.useMemo(() => {
+    const { liveCount, totalCount, freshCount } = React.useMemo(() => {
         const seats = [...sessions.values(), ...workers];
         let live = 0;
+        let fresh = 0;
         for (const seat of seats) {
-            if (deriveLiveness(seat, unreachable).online) live += 1;
+            const { verdict } = deriveLiveness(seat, unreachable);
+            // "live" = identity-proven PRESENT (alive / idle / wedged) — the same
+            // tier boundary the tiles paint as non-dead. Turn-freshness ('alive')
+            // drives the pulse, NOT the count: a quiet seat is idle, not gone.
+            // (CKP-03 — counting `online` keyed the headline to the 3-min turn
+            // fence, so the count drained 9→0 as seats went quiet while their
+            // tiles stayed lit. One derivation, two facets: presence + freshness.)
+            if (verdict === 'alive' || verdict === 'idle' || verdict === 'wedged') live += 1;
+            if (verdict === 'alive') fresh += 1;
         }
-        return { liveCount: live, totalCount: seats.length };
+        return { liveCount: live, totalCount: seats.length, freshCount: fresh };
     }, [sessions, workers, unreachable]);
 
     const dotColor = unreachable ? GREY : liveCount > 0 ? GREEN : GREY;
@@ -1354,7 +1365,7 @@ function CockpitHeader() {
             <View style={styles.headerTitleRow}>
                 <Text style={[styles.headerTitle, { fontSize: scaled(22, d.typeScale) }]}>Cockpit</Text>
                 <View style={styles.headerStatusChip}>
-                    <StatusDot color={dotColor} isPulsing={!unreachable && liveCount > 0} size={7} />
+                    <StatusDot color={dotColor} isPulsing={!unreachable && freshCount > 0} size={7} />
                     <Text style={[styles.headerStatusText, { fontSize: scaled(12, d.typeScale) }]}>{statusLabel}</Text>
                 </View>
             </View>
