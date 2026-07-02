@@ -5,6 +5,7 @@ import { onShutdown } from "@/utils/shutdown";
 import { Fastify } from "./types";
 import { authRoutes } from "./routes/authRoutes";
 import { congressRoutes } from "./routes/congressRoutes";
+import { congressOpsRoutes } from "./routes/congressOpsRoutes";
 import { wardenRoutes } from "./routes/wardenRoutes";
 import { vramRoutes } from "./routes/vramRoutes";
 import { diskRoutes } from "./routes/diskRoutes";
@@ -118,6 +119,7 @@ export async function startApi(opts: StartApiOptions = {}) {
     v3SessionRoutes(typed);
     attachmentRoutes(typed);
     congressRoutes(typed);
+    congressOpsRoutes(typed);
     wardenRoutes(typed);
     vramRoutes(typed);
     diskRoutes(typed);
