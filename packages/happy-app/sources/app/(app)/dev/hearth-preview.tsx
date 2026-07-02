@@ -56,13 +56,17 @@ function makeSession(id: string, name: string, overrides: Partial<SessionRowData
 }
 
 // Roster keyed by cuid (= session id) — the JOIN key the real transform uses.
+// Legacy fixture strings for `role` (e.g. 'design-research', 'ai-ops') predate
+// the tier-role enum and coerce to 'unknown' at parse time in the real feed;
+// here we cast at the TS layer to keep the fixture text authentic on-screen.
 const previewRoster: Map<string, CongressSeat> = new Map(
     CONGRESS_LANES.map((l) => [
         l.cuid,
         {
             seat: l.seat, cuid: l.cuid, verdict: l.verdict, kind: 'session',
-            role: l.role, pedal: l.pedal, host: 'CarlosPC', pid: l.pid,
+            role: l.role as CongressSeat['role'], pedal: l.pedal, host: 'CarlosPC', pid: l.pid,
             model: null, warm: null, vramMB: null, currentWork: null, workStatus: null, startedAt: null,
+            parent_seat_id: null, depth: 0, cage_status: 'uncaged', cage_id: null,
         } satisfies CongressSeat,
     ])
 );
@@ -71,9 +75,10 @@ const previewRoster: Map<string, CongressSeat> = new Map(
 const previewWorkers: CongressSeat[] = [
     {
         seat: 'brain-3090', cuid: null, verdict: 'ALIVE', kind: 'worker',
-        role: 'pull-worker', pedal: null, host: 'CarlosPC', pid: 30352,
+        role: 'worker', pedal: null, host: 'CarlosPC', pid: 30352,
         model: 'qwen3:30b', warm: true, vramMB: 19200,
         currentWork: 'drafting i18n for the for-carlos cards', workStatus: 'working', startedAt: null,
+        parent_seat_id: null, depth: 0, cage_status: 'uncaged', cage_id: null,
     },
 ];
 

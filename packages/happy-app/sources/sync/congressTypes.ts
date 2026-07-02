@@ -52,6 +52,39 @@ export const CongressTailPreviewSchema = z.object({
     renderSafe: z.boolean().nullable(),
 });
 
+// Recursive-tier fields (2026-07-02, caged ai-ops design, vision check #6 —
+// see docs/lane-happy-dev/schema-recursive-congress-seat.md). The seat graph
+// is a tree: parent_seat_id === null marks a root (penthouse/top-level); every
+// other seat resolves upward. Backward-compat is load-bearing — every new
+// field has a default or is nullable so legacy flat-list payloads still parse
+// and land as depth-0 roots.
+//
+// DEPTH computation choice: **write-time cache**. Whoever creates/updates a
+// seat is responsible for setting `depth = parent.depth + 1` (or 0 if root)
+// at the write site. The schema stores the cached value; readers trust it.
+// Lazy-on-traversal was rejected — the roster is hot-read and cold-written,
+// so paying the walk once per write beats paying it on every render. The
+// compute itself is out of scope for this shift (schema-only); wiring lives
+// in the reducer/oracle ripple that follows.
+//
+// ROLE is an enum but tolerant: unknown strings from a legacy payload coerce
+// to 'unknown' via `.catch` so a stale server row doesn't fail the whole
+// roster parse.
+export const CongressSeatRoleSchema = z.enum([
+    'penthouse',
+    'floor-god',
+    'worker',
+    'desk',
+    'warden',
+    'porter',
+    'unknown',
+]).catch('unknown').default('unknown');
+
+export const CongressSeatCageStatusSchema = z.enum([
+    'sealed',
+    'uncaged',
+]).catch('uncaged').default('uncaged');
+
 export const CongressSeatSchema = z.object({
     seat: z.string(),
     // cuid = session.id for session rows (the JOIN key); null for worker rows
@@ -62,7 +95,7 @@ export const CongressSeatSchema = z.object({
     claudeSid: z.string().nullish(),
     verdict: z.string(),
     kind: z.string().nullable(),    // 'session' (default) | 'worker'
-    role: z.string().nullable(),
+    role: CongressSeatRoleSchema,
     pedal: z.string().nullable(),
     host: z.string().nullable(),
     pid: z.number().nullable(),
@@ -97,7 +130,65 @@ export const CongressSeatSchema = z.object({
     // Task B — bounded live-output preview (see schema comment above). Same
     // `.nullish()` rationale as cardCounts.
     tailPreview: CongressTailPreviewSchema.nullish(),
+    // Recursive-tier fields (see block comment above CongressSeatRoleSchema).
+    // parent_seat_id: null = root (penthouse / top-level); any other value is
+    // the `seat` of the parent. Legacy flat-list rows default to null, which
+    // makes every pre-existing seat a depth-0 root until re-parented.
+    parent_seat_id: z.string().nullable().default(null),
+    // depth: write-time cache. 0 for roots, parent.depth + 1 otherwise. Not
+    // validated at read time — the writer is trusted (see block comment).
+    depth: z.number().default(0),
+    // cage_status: 'sealed' seats resolve a concrete `cage_id`; 'uncaged'
+    // seats have `cage_id === null`. Legacy rows default to 'uncaged'.
+    cage_status: CongressSeatCageStatusSchema,
+    // cage_id: null when uncaged. String when sealed (the cage the seat lives
+    // in). Not cross-validated against cage_status in the schema — consistency
+    // is a writer-side invariant.
+    cage_id: z.string().nullable().default(null),
 });
+
+// Cycle guard for the recursive seat tree. Walk the parent chain from
+// `parentId` upward through `allSeats`; if we encounter `seatId` anywhere in
+// that chain, the write would create a cycle (a seat becoming its own
+// transitive ancestor) and we throw. Callers use this at INSERT/UPDATE time
+// BEFORE persisting a parent_seat_id change. Not wired into every write
+// here — that ripple is scoped separately.
+//
+// Safety notes:
+//   - `parentId === null` is trivially fine (root — no chain to walk).
+//   - `parentId === seatId` is the degenerate self-parent case: caught on the
+//     first step.
+//   - A pre-existing cycle in `allSeats` (unrelated to this write) would loop
+//     forever; we cap the walk with a visited set so a corrupt roster fails
+//     loudly instead of hanging the caller.
+export function assertNoCycle(
+    seatId: string,
+    parentId: string | null,
+    allSeats: ReadonlyArray<{ seat: string; parent_seat_id?: string | null }>,
+): void {
+    if (parentId === null) return;
+    const bySeat = new Map<string, string | null>();
+    for (const s of allSeats) {
+        bySeat.set(s.seat, s.parent_seat_id ?? null);
+    }
+    const visited = new Set<string>();
+    let cursor: string | null = parentId;
+    while (cursor !== null) {
+        if (cursor === seatId) {
+            throw new Error(
+                `assertNoCycle: setting parent of "${seatId}" to "${parentId}" would create a cycle`,
+            );
+        }
+        if (visited.has(cursor)) {
+            throw new Error(
+                `assertNoCycle: pre-existing cycle detected in roster while walking ancestors of "${seatId}" (revisited "${cursor}")`,
+            );
+        }
+        visited.add(cursor);
+        const next = bySeat.get(cursor);
+        cursor = next === undefined ? null : next;
+    }
+}
 
 export const CongressRosterResponseSchema = z.object({
     ts: z.number().nullable(),
