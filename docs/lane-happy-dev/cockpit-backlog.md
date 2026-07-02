@@ -54,7 +54,14 @@ Server keys counts by building **floor** (atlas, crew, spine…); cockpit lanes 
 - **Decision needed (Carlos):** (a) drop kanban chips from congress-seat lanes, or (b) add a separate "floors" section that renders the building's boards.
 - **Accept:** **0 kanban parse errors over 3 min**; chips render only where data legitimately maps.
 
-### CKP-03 · Live-count decays 9→0 and pins at zero · `bug` · Critical · OPEN
+### CKP-03 · Live-count decays 9→0 and pins at zero · `bug` · Critical · PR
+> **PR ready 2026-07-02 ~12:50** — branch `fix/ckp-03-live-count-decay` @ `9c8ca8a`. Root
+> confirmed: header counted `online` (turn-within-3-min fence) while tiles paint verdict
+> tiers — quiet seats drained out of the headline. Now: count = presence (alive|idle|wedged),
+> pulse = turn-fresh, one deriveLiveness call. + fixed always-false `active` raw-read.
+> **Evidence:** mechanism proof on the real function (fence crossing: OLD 1→0, NEW holds);
+> lived 5m17s: `0 of 12 live` == roster truth (0 present-tier post-restart), single state,
+> relay regression green. **Residual:** populated-roster re-verify rides CKP-22 (see below).
 On load the header reads "9 of 11 live"; within seconds it drains to **"0 of 11 live"** and holds flat there (500ms watcher: 12/12 reads `0/11`) while all 6 seats keep rendering. The reassuring headline number is a load-time artifact that expires.
 - **Likely root:** liveness is beat-age based; seats age past threshold between oracle refreshes, so the count drains instead of refreshing — or header count and settled count use different derivations.
 - **Fix:** trace the "N live" derivation + staleness window; reconcile with per-seat verdicts.
@@ -91,6 +98,14 @@ Icon-only button, ionicons private-use codepoint renders as blank/tofu, and it l
 
 ### CKP-22 · Oracle emits 2 anonymous `seat:null` rows · `infra` · Minor · OPEN
 seats-oracle publishes 2 rows with `seat:null`; the server row-salvage drops them, so 2 live sessions are invisible and the "11" count is untrustworthy.
+> **Evidence grew 2026-07-02 ~12:40 (post-restart):** now **6** `seat:null` UNREGISTERED
+> rows, and a freshly-registered, demonstrably-alive seat (`e26c843d`, the desk) reads
+> **DEAD** with `lastTextTs:null` — false-DEAD attribution on a live seat, same family as
+> peer-channel `c8bc55e` (oracle EPERM false-DEAD). Every named seat post-restart reads
+> DEAD/REBOUND/DAEMON-LOST despite live panes. Severity looks **Major**, not Minor — the
+> whole roster is currently unattributable; CKP-03's populated-roster re-verify blocks on
+> this. (Registration note: register stamped `cuid=null` — "cuid unresolvable, daemon
+> down/churned?" — the claudeSid-keyed join may not be enough for the oracle's verify.)
 - **Fix (upstream, peer-channel):** name-or-drop the null rows at the source.
 - **Accept:** roster count matches real seats; no silent-dropped rows. Related: CKP-03, CKP-13.
 
