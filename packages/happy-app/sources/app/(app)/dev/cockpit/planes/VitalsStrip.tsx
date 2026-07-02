@@ -50,22 +50,25 @@ function vitalDotColor(unreachable: boolean, hasWarning: boolean, hasData: boole
 }
 
 // The gauge-card honest status (CKP-04/15). Derived from the feed's honest signals:
-//   - reachable (not unreachable)               -> 'live'   (a fresh read is up).
-//   - unreachable with last-known data          -> 'dead'   (had it, lost it — loud).
-//   - unreachable with no data + confirmed dead -> 'dead'   (never bound — long copy).
-//   - unreachable with no data, still settling  -> 'binding' (calm 'reading…').
-// The `feedStatus` (only surfaced by useBacklog, which this lane owns) sharpens the
-// last two: with it, a confirmed-dead-never-had-data feed reads 'dead' (the honest
-// 'unavailable — can't read X') instead of an eternal 'reading…'. Feeds whose hooks
-// don't yet surface status (vram/disk/context — owned by other lanes, unchanged) fall
-// back to the had-data heuristic: dead-with-data is loud, no-data is a calm binding.
+//   - unreachable (whether or not last-known data survives) -> 'dead'    (loud).
+//   - reachable + a fresh read                              -> 'live'.
+//   - reachable + no data yet                               -> 'binding' (calm 'reading…').
+//
+// CKP-04 FIX: `unreachable` is NOT a first-paint state — useHonestFeed only trips it
+// after >=3 consecutive failed/timed-out polls (~12s), so by the time it's true the feed
+// is CONFIRMED failing, never "still settling." Mapping unreachable-with-no-data to
+// 'binding' ("reading…") was the perpetual-"reading…" lie: DISK/CTX, whose sentinel
+// writers died days ago, read as "still loading" forever. Now unreachable => 'dead'
+// ("unavailable — can't read X", or a dimmed last-known + "last read {age} ago" when the
+// hook kept the stale view). 'binding' is reserved for the genuinely-settling window:
+// reachable, first polls in flight, no data landed yet.
 function deriveGaugeStatus(
     unreachable: boolean,
     hasData: boolean,
     feedStatus?: 'binding' | 'live' | 'dead',
 ): VitalGaugeStatus {
-    if (!unreachable) return 'live';
-    if (hasData) return 'dead';
+    if (unreachable) return 'dead';
+    if (hasData) return 'live';
     if (feedStatus === 'dead') return 'dead';
     return 'binding';
 }
@@ -119,22 +122,22 @@ export function VitalsStrip({ variant = 'dots' }: VitalsStripProps) {
     // progress) reads as an honest "reading..." rather than silently sharing text with
     // either the healthy '—' or the confirmed-dead "can't read X" copy.
     const vramSummary = vram.unreachable
-        ? (vram.view ? "can't read the GPU" : 'reading…')
+        ? (vram.view ? "can't read the GPU" : 'unavailable')
         : vram.view
             ? `${Math.round((vram.view.usedMB / Math.max(1, vram.view.totalMB)) * 100)}% used`
             : '—';
     const diskSummary = disk.unreachable
-        ? (disk.view ? "can't read disk" : 'reading…')
+        ? (disk.view ? "can't read disk" : 'unavailable')
         : disk.view
             ? (diskWarn ? `${disk.view.boxes.filter((b) => !b.reachable).length + disk.view.boxes.reduce((n, b) => n + b.drives.filter((d) => d.status !== 'green').length, 0)} to watch` : 'all disks healthy')
             : '—';
     const contextSummary = heartbeat.unreachable
-        ? (heartbeat.view ? "can't read heartbeat" : 'reading…')
+        ? (heartbeat.view ? "can't read heartbeat" : 'unavailable')
         : heartbeat.view
             ? (heartbeat.view.anyOverdue ? 'overdue' : contextWarn ? 'seat near gate' : 'all seats calm')
             : '—';
     const backlogSummary = backlog.unreachable
-        ? (backlog.view ? "can't read backlog" : 'reading…')
+        ? (backlog.view ? "can't read backlog" : 'unavailable')
         : backlog.view
             ? (backlog.view.total > 0 ? `${backlog.view.total} queued` : 'backlog clear')
             : '—';
