@@ -1,0 +1,546 @@
+{
+  "building": {
+    "active_fork_used": "munder-difflin-fork2 — the second fork is the ONLY one with its own .git (`.git/` present, HEAD at 1f3168b \"fix(copilot-seat): render god-reply bubbles in the PWA\" from 2026-06-25), the newest source-file mtimes go to 2026-06-27 (`out/main/index.js`, `pick-office.ps1`, `run-office.ps1`), and it carries a `.fork2-write-lease.json` at the root. `munder-difflin` (fork1) is a shell that only contains a Jun-10 `hive/` runtime state directory and inherits git from projects-infra — dormant.",
+    "building_root_path": "C:\\Users\\Carlos\\Desktop\\projects\\building\\munder-difflin-fork2",
+    "top_level_shape": "Electron desktop app (\"Munder Difflin harness / Camelot Trihamlet\") using electron-vite, node-pty for real Claude Code / agent CLI PTYs, React 18 + Zustand renderer, and PixiJS for the walking-avatar office scene. Two coexisting renderer shells wired at build time (`main.tsx` picks between them): the LEGACY `App.tsx` (full-screen PixiJS floor + right-side agent detail panel) and the NEW `CrewShell.tsx` (lazygit-shaped 3-pane building view with a floor-stack of Tiny-Tower tiles, a conversation-centerpiece, a detail pane, and the raw-traces drawer). Ships as a native Electron package (`out/main/index.js` + `out/preload/index.js` + a `pick-office.ps1` / `run-office.ps1` launcher pair) with an embedded `copilot-pwa/` service-worker PWA that a phone can hit for the remote-control / god-reply thread. On-disk state lives under a per-office `hive/` git repo (single-committer: main process only; agents just drop files).",
+    "key_atoms": [
+      {
+        "name": "GOD orchestrator",
+        "path": "C:\\Users\\Carlos\\Desktop\\projects\\building\\munder-difflin-fork2\\src\\renderer\\src\\hooks\\useHive.ts",
+        "purpose": "The god-agent bootstrap + orchestrator glue. Spawns the god PTY (id='god', name='Parthy'/per-floor override) into the harnessHome cwd, runs the /remote-control + INITIAL_GOD_PROMPT boot sequence gated by the TUI-readiness bootGate, drives hive.ts, wires all worker hook events (PreToolUse/PostToolUse/PreCompact/Stop/Notification/UserPromptSubmit/PreInvocation/PostInvocation) to floor state, handles idle-inbox nudging with per-agent NUDGE_COOLDOWN_MS + `nudged`-ref dedup, and enforces the breaker precedence pin. Hive.ts on the main side (src/main/hive.ts, 1588 lines) is the on-disk router that this hook drives — registry.json, tasks.json, per-agent inbox/outbox/memory.md/cursor.json, log.jsonl, board.md, PROTOCOL.md, single-committer git.",
+        "load_bearing": true
+      },
+      {
+        "name": "Worker tile / AgentStrip",
+        "path": "C:\\Users\\Carlos\\Desktop\\projects\\building\\munder-difflin-fork2\\src\\renderer\\src\\components\\AgentStrip.tsx",
+        "purpose": "Bottom strip of live-agent tiles in the classic App shell — each tile is one PTY, shows portrait/name/status/action, click to select. AgentCard.tsx + AgentControlStrip.tsx render richer per-agent controls. AgentDetailPanel.tsx is the right-side deep view for one worker (terminal + command bar + queue).",
+        "load_bearing": true
+      },
+      {
+        "name": "Walking-avatar scene (OfficeFloor)",
+        "path": "C:\\Users\\Carlos\\Desktop\\projects\\building\\munder-difflin-fork2\\src\\renderer\\src\\scene\\office\\OfficeFloor.tsx",
+        "purpose": "1895-line PixiJS scene: Tiled map (office.tmj), tileset atlas, Camera, Character sprites with cast portraits, pathfinding, station stations (desk/shelf/terminal/board/mailbox/web/mcp), coffee economy, cafeteria breaks, idle errands (water plants/cig break/etc), gossip-vs-suckup lines when Michael walks by, MessageEnvelope handoff-flying, and the ThoughtBubble/ToolBubble pop-ups. THIS is 'agents-as-interface' — the load-bearing metaphor of the whole product.",
+        "load_bearing": true
+      },
+      {
+        "name": "Spawn-a-real-Claude mechanism",
+        "path": "C:\\Users\\Carlos\\Desktop\\projects\\building\\munder-difflin-fork2\\src\\renderer\\src\\store\\spawnAgent.ts",
+        "purpose": "The single spawn path used by both the AddAgentModal (human click) and the god's spawn-request poller (organ-driven). Mints ptyId=`pty-<agentId>`, calls `window.cth.spawnPty` with a hive AgentMeta, closes the bootGate, and pushes an Agent record with status='idle', action='starting up'. The PTY IS a real live `claude` process — no simulation. Main-side spawn: src/main/pty.ts + hive.ts.ensureAgent injects hive-aware env + args (--add-dir hive root, hooks pointing at cth-hook.cjs).",
+        "load_bearing": true
+      },
+      {
+        "name": "Streamed-output terminal",
+        "path": "C:\\Users\\Carlos\\Desktop\\projects\\building\\munder-difflin-fork2\\src\\renderer\\src\\components\\terminalPool.ts",
+        "purpose": "Persistent xterm.js pool: one xterm+WebGL renderer per ptyId, pre-warmed at spawn, attaches to the DOM on demand — the 'live claude output stream' the empty-floor CTA promises. PtyTerminalView.tsx, FullscreenTerminal.tsx and crew/GodTerminalLens.tsx all mount from the same pool, so the buffer is warm the moment a tile is clicked.",
+        "load_bearing": true
+      },
+      {
+        "name": "God terminal lens",
+        "path": "C:\\Users\\Carlos\\Desktop\\projects\\building\\munder-difflin-fork2\\src\\renderer\\src\\crew\\GodTerminalLens.tsx",
+        "purpose": "The crew shell's centerpiece view of the god's live TUI — READ-ONLY by default (xterm disableStdin), 'unlock typing' toggle for deliberate write-through, One-Half-Dark theme, JetBrainsMono NF font. Supports REMOTE floors via `remotePtyList` + the loopback PTY gateway (remoteTranscript.ts). This is the 'fully interrupting me → but not' resolution of Carlos's complaint.",
+        "load_bearing": true
+      },
+      {
+        "name": "Thought-line / status-line rendering",
+        "path": "C:\\Users\\Carlos\\Desktop\\projects\\building\\munder-difflin-fork2\\src\\renderer\\src\\scene\\office\\ThoughtBubble.ts",
+        "purpose": "The pinned cloud above each avatar's head. Reads `agent.action` (`using Read`, `compacting context`, `reading inbox`, `running the floor`, `thinking`, or the first 6 words of `lastPrompt`) — empty text renders an animated '…' (thinking dots). Fade-in/linger/fade-out state machine, camera-zoom counter-scaling, world-bounds clamping so a corner avatar's cloud never leaves the map. Sibling ToolBubble.ts is the darker speech bubble for tool-glyph mutters.",
+        "load_bearing": true
+      },
+      {
+        "name": "Liveness/floor-state oracle",
+        "path": "C:\\Users\\Carlos\\Desktop\\projects\\building\\munder-difflin-fork2\\src\\main\\index.ts",
+        "purpose": "Lines 1140–1360-ish: the 'unfuckable' floor-state protocol. Main writes claim.json (BOOT_NONCE + pid + boot-time, atomic, once at boot — Tier A + Tier B named-mutex holder via child PowerShell) and beat.json (monotonic seq, ~10s cadence, only written while the RENDERER keeps beating via `hive:beat` IPC — a wedged renderer with live main reads STALE, never false-green). The reader is `.claude/tools/floor-state.cjs` (external) which emits verdict enum: alive / wedged / dead / down / never-booted / unverified / stale-unknown / probably-alive / unknown. Verdict is overlaid onto pulse.json.oracleState so left-pane FloorStack tiles and centerpiece PulsePanel show ONE truth.",
+        "load_bearing": true
+      },
+      {
+        "name": "Awareness beat (renderer half)",
+        "path": "C:\\Users\\Carlos\\Desktop\\projects\\building\\munder-difflin-fork2\\src\\renderer\\src\\crew\\AwarenessBeat.tsx",
+        "purpose": "React error-boundary that also fires `window.cth.beat()` on interval; if the cockpit render throws, the beat stops, main stops touching beat.json, and the oracle reads WEDGED. This is the 'the boundary IS the honesty spine' pattern — a rendering failure MUST degrade to a red verdict, never a stuck green.",
+        "load_bearing": true
+      },
+      {
+        "name": "Fan-out visualization: message envelopes",
+        "path": "C:\\Users\\Carlos\\Desktop\\projects\\building\\munder-difflin-fork2\\src\\renderer\\src\\scene\\office\\MessageEnvelope.ts",
+        "purpose": "Every hive-routed message flies as a paper-envelope sprite from sender desk to recipient desk (or to the office door for 'human' recipients — escalations). Main-process router emits `onHiveMessage({from, targets[], act, needsHuman})`; the scene spawns one envelope per target. This IS the god→worker fan-out visualization — no explicit tree/graph edges, just physical paper crossing the office.",
+        "load_bearing": true
+      },
+      {
+        "name": "Floor stack (crew shell)",
+        "path": "C:\\Users\\Carlos\\Desktop\\projects\\building\\munder-difflin-fork2\\src\\renderer\\src\\crew\\FloorStack.tsx",
+        "purpose": "Tiny-Tower vertical stack of floor TILES in the crew shell's LEFT pane. One tile per floor (penthouse/spine/atlas/hestia/crew), each showing god name, worker roster, oracle-verdict dot+word (OV_META), recent activity, and card counts (todo/doing/blocked/done). Reads the building feed (buildingFeed.ts). All floors concurrent — hidden scenes stay mounted with ticker stopped.",
+        "load_bearing": true
+      },
+      {
+        "name": "Needs-you strip",
+        "path": "C:\\Users\\Carlos\\Desktop\\projects\\building\\munder-difflin-fork2\\src\\renderer\\src\\crew\\NeedsYou.tsx",
+        "purpose": "HITL queue. Aggregates blocked agents (status='blocked' or blockReason set) + unanswered task humanQA entries. Renders nothing when empty (zero chrome). Read-only surface — the answer flow lives elsewhere (composer / task detail / god's own session). Same posture as cockpit-v2's NEEDS-YOU plane.",
+        "load_bearing": true
+      },
+      {
+        "name": "Pulse panel + PulseView",
+        "path": "C:\\Users\\Carlos\\Desktop\\projects\\building\\munder-difflin-fork2\\src\\renderer\\src\\crew\\PulsePanel.tsx",
+        "purpose": "The building's single distilled awareness surface. Reads `.offices/main/hive/pulse.json` written by a 60s derived-only distiller (pulse.cjs) — heartbeat age, blockedOnHuman ranked, shipped, burning, per-floor oracleState, narrative line. STALE_MS=3min → distiller-not-running is honestly reported, never frozen-fresh. Strip variant sits above the conversation; PulseView is a top-level view.",
+        "load_bearing": true
+      },
+      {
+        "name": "Command Center",
+        "path": "C:\\Users\\Carlos\\Desktop\\projects\\building\\munder-difflin-fork2\\src\\renderer\\src\\components\\CommandCenterPanel.tsx",
+        "purpose": "Cross-cutting tabbed detail pane (git, files, threads, memory-graph, tasks-kanban, ask-me, schedules). Sibling components: TasksKanban.tsx (hive tasks board), AskMeTab.tsx (human-QA queue), MemoryGraphPanel.tsx (semantic memory), ThreadsPanel.tsx, GitTab.tsx, FilesTab.tsx.",
+        "load_bearing": false
+      },
+      {
+        "name": "Copilot PWA (phone surface)",
+        "path": "C:\\Users\\Carlos\\Desktop\\projects\\building\\munder-difflin-fork2\\src\\main\\copilot-pwa\\app.js",
+        "purpose": "Embedded chat PWA served by the main process — the pre-Happy phone cockpit for talking to the god from off-desk, plus the remote-permission-approval channel. Latest fork2 fix (1f3168b) was here: rendering god-reply bubbles in the PWA.",
+        "load_bearing": false
+      },
+      {
+        "name": "Closing time protocol",
+        "path": "C:\\Users\\Carlos\\Desktop\\projects\\building\\munder-difflin-fork2\\src\\main\\closingTime.ts",
+        "purpose": "Graceful shutdown: mails god a shutdown brief, god broadcasts to team, each worker commits/parks WIP + appends state to memory.md + ACKs, god sends CLOSING-TIME-COMPLETE, main tears down. Never types into terminals — pure hive-mail rails. This is a LIFECYCLE HOOK Happy could steal as-is.",
+        "load_bearing": true
+      }
+    ],
+    "ia_patterns": [
+      {
+        "name": "Tiny-Tower floor stack (LEFT)",
+        "description": "Vertical stack of floor tiles in the crew shell, one per office (penthouse/spine/atlas/hestia/crew). Elevator = pixel spine between tiles. Each tile: god name, roster mini-portraits, oracle dot+word, activity, todo/doing/blocked/done counts. Read-only from a building feed; click to select.",
+        "files": [
+          "src/renderer/src/crew/FloorStack.tsx",
+          "src/renderer/src/crew/buildingFeed.ts"
+        ]
+      },
+      {
+        "name": "Conversation centerpiece (CENTER)",
+        "description": "Lazygit-shaped centerpiece: god's live terminal via GodTerminalLens (read-only by default, deliberate 'unlock typing' toggle), remote floors bridged over loopback PTY gateway. Reads the SAME persistent xterm the classic office uses — full TUI fidelity, streaming thinking, zero parsing.",
+        "files": [
+          "src/renderer/src/crew/ConversationPane.tsx",
+          "src/renderer/src/crew/GodTerminalLens.tsx",
+          "src/renderer/src/components/terminalPool.ts",
+          "src/renderer/src/crew/remoteTranscript.ts"
+        ]
+      },
+      {
+        "name": "Detail pane (RIGHT) with tabs",
+        "description": "Per-selection deep view: ask-me / files / git / tasks / threads / memory-graph / schedules. Same shape as cockpit-v2's THE-WORK plane's expandable detail.",
+        "files": [
+          "src/renderer/src/crew/DetailPane.tsx",
+          "src/renderer/src/components/CommandCenterPanel.tsx"
+        ]
+      },
+      {
+        "name": "Raw traces drawer",
+        "description": "Collapsible pane for the raw log stream / event tap. Off-by-default.",
+        "files": [
+          "src/renderer/src/crew/RawTracesPane.tsx"
+        ]
+      },
+      {
+        "name": "Awareness strip + Needs-you strip",
+        "description": "Thin horizontal strips above the centerpiece: pulse-summary (heartbeat age, narrative, badges) + amber warning bar aggregating blocked agents and unanswered task-QA. Zero chrome when empty. NEVER modal, NEVER steals focus.",
+        "files": [
+          "src/renderer/src/crew/AwarenessStrip.tsx",
+          "src/renderer/src/crew/PulsePanel.tsx",
+          "src/renderer/src/crew/NeedsYou.tsx"
+        ]
+      },
+      {
+        "name": "Toast lane (crew)",
+        "description": "Non-blocking toast queue for OpResults (spawn/kill/dispatch/task-move/steer/gate/archive) so operator actions never modal — they log to a lane and dismiss.",
+        "files": [
+          "src/renderer/src/crew/CrewToasts.tsx",
+          "src/renderer/src/crew/toastLane.ts",
+          "src/renderer/src/crew/useCrewToasts.ts"
+        ]
+      },
+      {
+        "name": "Walking scene as an operable map",
+        "description": "The Pixi floor is CLICKABLE: character-click drives selection into the cockpit (`onAgentSelect`), hover emits a CK-style tooltip (`onAgentHover`), feet render a selection ring for the cockpit-selected agent. In feed-cast mode, remote-floor scenes render from the building feed instead of the local store — same scene, different data.",
+        "files": [
+          "src/renderer/src/scene/office/OfficeFloor.tsx"
+        ]
+      },
+      {
+        "name": "Everything-is-a-hive-file",
+        "description": "IA truth is on disk under `<harnessHome>/hive/`: registry.json (agents), tasks.json (kanban), board.md (shared blackboard), log.jsonl (append-only), per-agent {identity.md, memory.md, inbox/, outbox/, cursor.json, .gitignore}. UI is a view onto files; the god is the SOLE scribe of board.md. Consistent with the work-first-cockpit-spec §2 'files = self' invariant.",
+        "files": [
+          "src/main/hive.ts"
+        ]
+      }
+    ],
+    "data_flow": "Truth on disk under `<harnessHome>/hive/` (registry.json, tasks.json, board.md, per-agent inbox/outbox/memory.md, log.jsonl, plus per-host claim.json + beat.json + fleet.json). Push-side wire is Claude Code HOOKS: every agent's shim (`hive/bin/cth-hook.cjs`, written at bootstrap) opens a UDS/named-pipe (hive/hooks.sock on POSIX, `\\\\.\\pipe\\munder-difflin-<hash>` on Windows) to the main process and forwards PreToolUse / PostToolUse / PreCompact / PostCompact / UserPromptSubmit / Notification / Stop / SubagentStop / SessionStart / PreInvocation / PostInvocation events, plus the statusline shim forwards exact context tokens+limit after every response. Main forwards via `hive:hookEvent` IPC; useHive.ts effect #2 is the giant switch that maps every event to `updateAgent({status, action, currentStation, carrying, contextTokens, contextLimit})`. Additional streams: `onHiveMessage` (routed hive mail — drives envelope sprites), `onBreakerState` (circuit-breaker level with PRECEDENCE over hook state — pins 'looping' until Stop), `onHiveTerminalHandoff` (non-Claude providers get hive mail as PTY-typed work orders), `onHiveContextUpdate` (statusline exact context), plus fs.watch on god/inbox for spawn-requests. Backfill loops: 15s poll of agentContext (transcript-derived tokens for agents whose statusline hasn't fired), 7s poll of hive:tasks for the NeedsYouStrip humanQA count, 8s poll of the building feed (buildingFeed.ts) for cross-floor tiles, 15s poll of pulse.json. Router polling: main-side hive.ts drains each agent's outbox into recipients' inboxes on interval (single-committer git per drain). The renderer NEVER polls the god's PTY buffer — output flows via the persistent xterm inside terminalPool, subscribed to the raw PTY stream at spawn.",
+    "walking_avatar_scene": {
+      "path": "C:\\Users\\Carlos\\Desktop\\projects\\building\\munder-difflin-fork2\\src\\renderer\\src\\scene\\office\\OfficeFloor.tsx",
+      "tech": "PixiJS v8 (with `pixi.js/unsafe-eval` shim for Electron CSP), Tiled JSON maps (office.tmj imported as raw text and parsed), three tilesets (office-tileset.png embedded + a5-office-floors-walls.png + interiors.png), custom TiledMapRenderer.ts, Camera.ts, Character.ts sprites with 4-facing animation frames from cast.ts (portraitArt.ts for the tile portraits), pathfinding.ts for A* on the collision grid, DeskScreen.ts for the desk-monitor overlay lit while seated, ThoughtBubble.ts + ToolBubble.ts for the pop-ups, MessageEnvelope.ts for flying mail. 1895 lines total.",
+      "description": "Full-floor Tiled office map — CEO office (Michael/god's private room, top-left corner), 6 pc- open-plan desks, named function-role desks (chief-architect / product-manager / team-lead / backend-engineer / ui-ux-expert / data-engineer / project-manager / market-researcher / agent-organizer), conference room overflow, break room (coffee machine + sink + mug tray + snack vending + fridge + water dispenser + plants + open smoking window). Each Agent maps to a Character sprite: canonical `castForAgent(agent)` picks the face (matching the portrait), a SeatPool assigns desks in PRIMARY_SEAT_NAMES order (first agent → desk-ceo, then pc-1..6, then named roles). Sprites walk to stations driven by TOOL_STATION mapping (Read→shelf, Edit/Write→desk, Bash→terminal, WebFetch/Search→web, TodoWrite→board, Task→mailbox, mcp__*→mcp). Idle behavior: cafeteria breaks with two-actor scripted dialogues (cafeteriaLines.ts pickExchange), errands (water plants, letting-air-in at window, hydration break, fridge peek, shelf browse, scrap-paper bin), Michael's boss-only smoke break at the window, gossip-vs-suckup line switch when Michael walks past a worker. Task-board pin/take/archive movements: a sprite physically pins a sticky-note, walks to grab its assignment, files it as done. Envelopes fly desk-to-desk on every routed hive message (or to the door for human escalations). Feed-cast mode renders REMOTE floors' scenes from the building feed (host-hive surfaces go inert). The scene is CLICK-OPERABLE — a character click routes to `onAgentSelect(agentId)`, hover emits `onAgentHover(info)` for a CK-style tooltip card.",
+      "load_bearing": true
+    },
+    "god_worker_fan_out_pattern": "Fan-out is PHYSICAL PAPER, not a tree/graph. Main-process hive router emits `onHiveMessage({from, targets[], act, needsHuman})` for every routed hive mail. `OfficeFloor.tsx` calls `spawnHandoff(from, target, act, needsHuman)` for each target — a MessageEnvelope sprite spawns at the sender's desk pixel position and flies (a clean parabolic arc, endpoints snapshotted at spawn so mid-flight avatar drift doesn't distort the path) to the recipient desk (or to the office entrance door for `to='human'` escalations). MAX_ENVELOPES cap prevents scene overload. `act` (`request/inform/propose/query/agree/refuse/done`) tints the envelope; `needsHuman` marks it. Additional fan-out cues: the god's PreToolUse events firing `Task` route to the mailbox station (a sub-agent handoff LOOKS like the god walking to the outbox); when a broadcast lands, the router emits one event with N targets and N envelopes fly at once. There is NO drawn tree, NO graph edges, NO nested tiles — the metaphor IS the visualization. Complementary crew-shell surface: DispatchLedger (dispatchLedger.ts) records opDispatch entries and PulsePanel's intent rail counts pending intents.",
+    "liveness_oracle_pattern": "Two-layer floor-state oracle, exact match to the parthenogenesis floor-state design (docs referenced: `parthenogenesis/docs/building-awareness-final-form-2026-06-15.md`). LAYER 1 (claim): main writes `<hive>/claim.json` ONCE at boot with `{ pid, bootNonce=random 8-byte hex, bootAt=Date.now(), ownProcessStartMs (shell-out to Get-Process, one-shot), instanceId }` — Tier A stand-in for the OS lock; oracle asks the KERNEL `process.kill(pid,0)` + start-time EQUALITY cross-check (defeats PID reuse — no tolerance window). Tier B upgrade: a child PowerShell process holds an open handle on a named kernel mutex `Global\\\\parthy-floor-<id>-<nonce>`; the kernel annihilates it on death/reboot/power-loss so no stale claim is possible. holderRespawnTimes sliding-window budget (10 respawns per 5 min) prevents crash-loop, but exhaustion is safe — degrades to Tier A. LAYER 2 (beat): `<hive>/beat.json` written atomically (tmp+fsync+rename in the SAME dir → EXDEV-safe) with a MONOTONIC `beatSeq` every BEAT_INTERVAL_MS=10s — BUT ONLY WHILE the RENDERER has called `hive:beat` within the last BEAT_FRESH_MS=20s. A wedged/crashed renderer with live main → beat.json ages → reads STALE, never false green. The renderer's `AwarenessBeat.tsx` React error-boundary fires the beat and STOPS on render-death so the honesty-spine failure mode is 'red', never 'stuck green'. Oracle verdicts (rendered by both FloorStack tile and PulsePanel tile from ONE source pulse.json.oracleState): alive / wedged / dead / down / never-booted / unverified / stale-unknown / probably-alive / unknown — each with dedicated color + word. Both claim.json + beat.json are per-HOST runtime state and gitignored (hive.ts line 285).",
+    "spawn_claude_output_stream_mechanism": "Path from click to visible stream: (1) User clicks 'add agent' in AddAgentModal or empty-floor CTA, or god's spawn-request organ drops a JSON into `<hive>/agents/god/inbox/spawn-requests/`. (2) `spawnHiveAgent(input)` in `store/spawnAgent.ts` mints `ptyId='pty-<agentId>'`, tokenizes the command, calls `markAgentSpawned(id)` to close the bootGate, then invokes `window.cth.spawnPty({...})`. (3) Main-side `pty.ts` uses node-pty to fork a real `claude` process (Windows-wrapped via cmd.exe /c when the target isn't a .exe — WinGet claude.exe launches directly), with hive.ts.ensureAgent-injected env (HIVE_ROOT, HIVE_AGENT_ID, HIVE_HOOKS_SOCK, OTEL endpoint if set) and args (--permission-mode bypassPermissions, --add-dir on hive root, hooks config pointing at `hive/bin/cth-hook.cjs`). (4) Main opens `onPtyData` and multicasts each chunk to any subscribing renderer via IPC AND to the persistent xterm entry in `terminalPool.ts`, which subscribes for the app's lifetime — so the buffer is warm and scrollable from the FIRST byte even if no view is currently mounted. (5) The renderer's Agent record gets `ptyId` set; `useEffect` in App.tsx calls `acquireTerminal(ptyId)` at once — pre-warming the xterm. (6) When the user clicks the agent tile, `AgentDetailPanel` (classic) or `GodTerminalLens` (crew) `attachTerminal(entry, hostRef.current)` — the WebGL xterm re-parents into the DOM instantly with full history. bootGate opens on the CLI's FIRST hook or statusline signal (SessionStart at earliest), at which point the boot placeholder action 'starting up'/'reconnecting…' flips to 'idle', the inbox-wake dedup resets, and the auto-typer hold releases. God's boot ALSO types `/remote-control` + the INITIAL_GOD_PROMPT orientation via `submitToPty` (bracketed-paste ESC[200~...ESC[201~ + separate \\\\r, serialized per PTY through `writeChains` so concurrent callers can't jam). A GOD_PROMPT_ACK_MS=45s watchdog re-types the orientation once if no UserPromptSubmit hook lands.",
+    "thought_line_copy_examples": [
+      "running the floor",
+      "compacting context",
+      "reading inbox",
+      "thinking",
+      "using Read",
+      "pinning a new task 📌",
+      "grabbing my task",
+      "filing it as done ✔",
+      "brewing a fresh one ☕",
+      "watering the plants 🌿",
+      "the floor runs itself 🚬",
+      "I DECLARE… a break",
+      "done! ✔",
+      "already shipped {done} tasks, Michael. raise? 🥺",
+      "has he ever actually written code?",
+      "'world's best boss' — he bought that mug himself"
+    ],
+    "lifecycle_hooks": [
+      "CLOSING TIME (src/main/closingTime.ts): human clicks 'closing time' in QuitWarningModal → main mails god shutdown brief → god broadcasts to team → each worker commits/parks WIP + appends state+next-steps to memory.md + replies with CLOSING-TIME-ACK subject → god waits for all ACKs, saves own memory, sends CLOSING-TIME-COMPLETE → main tears down. Progress streams to renderer via `onClosingTime({phase:'started'|'progress'|'complete'|'timeout'|'cancelled', acked, total})`. Rides existing hive rails only — never types into terminals.",
+      "BOOT-GATE (src/renderer/src/store/bootGate.ts): closes the auto-typer gate at `markAgentSpawned(id)` BEFORE the PTY exists; opens on the CLI's REAL first hook OR statusline signal via `markAgentTuiReady(id)`, resets inbox-wake dedup, flips 'starting up' action to 'idle'. GOD_TUI_READY_TIMEOUT_MS=10min budget with 'superseded'/'timeout' signals so a StrictMode remount or a re-spawn cleanly cancels stale waiters.",
+      "GRACE HOLD (bootGate.holdAgentGrace): a boot-hold window (BOOT_GRACE_MS = GOD_BOOT_MS 4s + REMOTE_CONTROL_SETTLE_MS 5s + 2.5s) during which the nudge/queue-drain typers are held OFF so they can't jam the boot sequence (`/remote-control` + orientation prompt).",
+      "ORIENTATION WATCHDOG (useHive armGodBoot): GOD_PROMPT_ACK_MS=45s — if `godPromptAckAt` (stamped on god's UserPromptSubmit hook) hasn't advanced past the type-time, the one-shot orientation prompt was eaten (modal/focus glitch); re-type it once.",
+      "NUDGE COOLDOWN (useHive NUDGE_COOLDOWN_MS=2s + `nudged`-ref content dedup): per-agent minimum gap + last-message-id dedup so a burst of 5 contracts fires ONE nudge, not 5.",
+      "BREAKER PRECEDENCE (useHive effect 2b + breakerLevel ref): a 'constrained'/'stopped' breaker state pins avatar to 'looping' and blocks hook-driven status flips until a genuine Stop clears it — kills the 'working-flicker' the spec calls out.",
+      "RECONCILE-WITH-LIVE-PTYS (App.tsx effect line 105): after a renderer reload (Vite HMR, laptop sleep) `window.cth.listPtys()` → `reconcileWithLivePtys` keeps restored agents whose PTY survived and drops the ones that truly died.",
+      "TERMINAL POOL PRE-WARM (App.tsx effect line 80): for every agent with a ptyId, `acquireTerminal(ptyId)` — WebGL xterm subscribes to the PTY stream even before the tile is clicked, so history is warm on first attach.",
+      "CLAIM/BEAT LIFECYCLE (main/index.ts around 1140-1360): claim.json written at boot, held by Tier B mutex-holder child; beat.json monotonic every 10s only while renderer beats; holderRespawnTimes sliding-window rebounds a killed holder; whole thing self-heals from claim demolition/kernel death/reboot."
+    ],
+    "what_the_building_does_that_happy_cannot_today": [
+      "Physically shows an office FLOOR with walking avatars where each agent IS a sprite that moves to a work station (desk/shelf/terminal/board/mailbox/web/mcp) matching the tool it just used, mediated by real Claude Code PreToolUse hook events — Happy's cockpit-v2 shows tile status but no spatial metaphor, no motion, and no per-tool station mapping.",
+      "Streams the actual claude PTY output byte-for-byte in a persistent WebGL xterm (terminalPool) — the god's live TUI as-is, including thinking, tool calls, permission prompts. Happy today reads Loom cards; it does not embed a live TUI.",
+      "Fans dispatches out as flying paper envelopes from god's desk to each worker desk (or to the office door for human escalations), one sprite per routed hive message with act-tinted color and needsHuman flag — Happy has no fan-out visualization at all.",
+      "Runs a full two-layer liveness oracle (claim.json Tier A/B + renderer-attested MONOTONIC beat.json) with 9 verdict states surfaced identically on FloorStack tiles AND PulsePanel — Happy's vitals plane is RENDER/QUIET/LOUD honesty-spine but does not yet run a floor-state oracle over remote floors.",
+      "Renders REMOTE floors' scenes via feed-cast mode + loopback PTY gateway, so all 5 offices' scenes are visible concurrently with each rendering its own cast — Happy is single-surface.",
+      "Boots the god with an autonomous `/remote-control` + INITIAL_GOD_PROMPT orientation, watchdogged by a real ack-hook, holding a bootGate against auto-typers — Happy has no first-boot orchestration of this shape.",
+      "Executes CLOSING TIME (mail-based graceful shutdown protocol that gets every worker to commit WIP + append state+next-step to memory.md + ACK before teardown) — Happy has no equivalent WIP-safe close ritual.",
+      "Reads and honors circuit-breaker state (constrained/stopped) with PRECEDENCE over hook-derived status, pinning the avatar to 'looping' until a real Stop — Happy's honesty-spine doesn't yet have breaker precedence.",
+      "Drains outbox→inbox as a first-class main-process router with single-committer git per drain, hop cap, and act taxonomy (request/inform/propose/query/agree/refuse/done) — Happy's file layer is per-thread cards, not a routed hive of messages.",
+      "Idle drain / inbox-wake: an idle agent with new inbox mail gets its TUI typed into with an inbox nudge, per-agent NUDGE_COOLDOWN_MS + content dedup + boot-grace guard so multi-agent collaboration doesn't stall — Happy has no equivalent wake primitive.",
+      "Distills the whole building into one pulse.json (60s derived-only) covering floors+blockedOnHuman+shipped+burning+narrative+intentsPending and surfaces it as ONE PulsePanel — Happy's vitals doesn't yet have a cross-floor distiller.",
+      "Serves a phone-facing copilot PWA with god-reply bubbles (main/copilot-pwa/) so remote-permission-approval works from anywhere — Happy IS the PWA answer here, but the god-reply-bubble UX is a live artifact worth studying.",
+      "Renders TWO parallel shells (classic App + crew CrewShell) with the office scene reusable in both — proves posture-shift can happen without re-writing the sim.",
+      "Hosts a `hive/bin/cth-hook.cjs` shim + `hive/bin/merged-ptu.cjs` (lane beat + budget-breaker loop detection) written by the main process on every bootstrap — the mechanism by which real `claude` sessions become hive-aware without touching global settings.",
+      "Renders a floor operability layer (click-to-select, hover-tooltip, feet selection ring) directly on the Pixi scene so the metaphor IS the control — Happy today mediates control through separate action rails.",
+      "Cost-accounting IS wired: session_id captured from hook payloads, doubles as `--resume` key + AgentUsageSample dedup key, ledger under hive root — Happy tracks tokens but not per-session provider ID lineage."
+    ],
+    "surprising_findings": [
+      "The 'boring-when-healthy' / 'banned-gerund' thought-line invariant Carlos mentioned is NOT explicitly enforced anywhere I could find — there's no linter, no policy file, no `bannedWords` array. The COPY happens to lean noun-y ('idle', 'running the floor', 'reading inbox') and gerunds ('compacting context', 'thinking', 'using Read') coexist. The invariant lives in Carlos's/Parthy's authorship discipline, not in code.",
+      "There is NO drawn god→worker tree/graph anywhere. The fan-out visualization is 100% flying paper envelopes on the office floor — beautiful, but it means an off-screen or unmounted floor can't visualize a dispatch. Happy shouldn't assume a graph exists to port.",
+      "Two entire renderer shells (App.tsx classic + CrewShell.tsx crew) coexist and are picked between at compile time by main.tsx — not a runtime toggle, and NOT dead code. The crew shell has extensive M0..M8 milestone proof scaffolding (CREW_PROOF=false in prod but the sentinels, PROOF_ROOT paths, and instrumentation are all still present) — a lot of the crew code is 'proven, wired for QA in worktree'.",
+      "Cockpit-v2's cross-posture density adaptation is NOT in the building — the classic office floor is a fixed full-screen PixiJS scene, and the crew shell is a fixed lazygit 3-pane. Neither is mobile-adaptive. If Happy absorbs the office scene it has to solve the responsive question the building never had to.",
+      "Non-Claude providers can be spawned but cannot drain hive inbox — direct hive mail to them is repackaged by `terminalWorkOrderPrompt` and QUEUED as a PTY-typed message via the same idle-only drain used for human-composed messages (see `onHiveTerminalHandoff` in useHive.ts). This is an interesting universal-provider adapter pattern: hive-agnostic mail → per-provider delivery mechanism.",
+      "There's a whole embedded IPC surface for `remotePtyBridge` + `ptyGateway` + `remoteTranscript` (main/remotePtyBridge.ts, main/ptyGateway.ts, crew/remoteTranscript.ts) supporting a loopback gateway model where a remote floor's PTYs can be bridged over the local network. Not just 'read the transcript file' — it's a real port+token bridge. Feels more sophisticated than Happy's current session-doc-file model.",
+      "The demo/mock event loop (`mockEvents.ts` + `cth:demo-handoff` window event) is CAGED with a very careful gate: opt-in `VITE_CTH_DEMO=1` OR a genuinely empty floor, AND stops the instant the first real PTY agent appears. This is the exact posture-adaptive discipline the honesty spine demands — 'boring when healthy', 'never fake liveness' — but expressed in a demo-loop context. Elegant.",
+      "The awareness spine failure-mode is inverted correctly: an error-boundary CATCHES a render throw, the beat stops, main stops writing beat.json, oracle reads WEDGED. So a broken cockpit reads as broken from OUTSIDE the process — a discipline Happy should copy verbatim.",
+      "There is an `assistant` role — Michael's prep assistant (Dwight?) that enriches prompts before forwarding them to god (`isAssistant` on AgentMeta, `enrichTaskPrompt`, ASSISTANT_MODEL constant). Send-only: excluded from broadcast fan-out so it never drains an inbox. This is a two-tier agent hierarchy (god + assistant + workers) that neither the spec nor cockpit-v2 currently model.",
+      "The CrewShell has 2017 lines and a top-of-file M0..M8.4 sentinel array including facilities/PA/mailroom milestones. Facilities panel, PA broadcast panel, morning report — a whole 'building runs itself' set of surfaces that go beyond what cockpit-v2 has scoped.",
+      "cast.ts binds an AGENT to a canonical character face via `castForAgent(agent)` — the SAME function used by the sprite AND by SpritePortrait.tsx, so the tile portrait always matches the walking sprite. Identity coherence discipline explicitly comment-marked (2026-06-12) — worth carrying into Happy as an invariant."
+    ]
+  },
+  "happy": {
+    "cockpit_v2_path": "C:\\Users\\Carlos\\Desktop\\projects\\happy\\packages\\happy-app\\sources\\app\\(app)\\dev\\cockpit-v2.tsx",
+    "cockpit_v2_head_sha": "88cc19bd86632440e5fcaca136f1e565789490b6 (lane/happy-dev tip; the cockpit-v2.tsx code itself was last touched in 9122519 -- Slice 3; 88cc19b is a docs-only follow-up)",
+    "atoms_present": [
+      {
+        "name": "CockpitV2 (root)",
+        "purpose": "Wraps the tree in DensityContext.Provider + ScrollView. Renders DensityPicker, NeedsYouPlane, TheWorkPlane, VitalsStrip top-to-bottom.",
+        "honesty_state": "Structural only — delegates honesty to each plane."
+      },
+      {
+        "name": "DensityPicker (dev only)",
+        "purpose": "Segmented DESKTOP/DECK/PHONE chip row that switches DensityContext value so all three postures are dogfoodable in one browser tab.",
+        "honesty_state": "N/A — dev picker, not a data surface."
+      },
+      {
+        "name": "NeedsYouPlane",
+        "purpose": "Plane 1 — warden knock-cards sorted by blocking count. Boring-when-healthy: renders a single quiet line 'Nothing needs you right now' when empty and healthy.",
+        "honesty_state": "If useWarden.unreachable AND empty -> renders <FeedUnreachable message='can't reach the Warden — answers won't send'/> (LOUD). If empty AND healthy -> quiet grey line (QUIET). Otherwise renders cards with count."
+      },
+      {
+        "name": "NeedsYouCard",
+        "purpose": "Individual knock-card: sender, GATE/ROUTINE chip, ask text, blocking-downstream cascade line, reply TextInput + Respond/'Not now' buttons, optimistic overlay, reauth link.",
+        "honesty_state": "Settled state = GREEN border-left. Gate = ACCENT_GATE red border. Routine = purple border. Errored 'auth' shows reauth link (LOUD); errored 'send' shows retry line."
+      },
+      {
+        "name": "TheWorkPlane",
+        "purpose": "Plane 2 — flattens useVisibleSessionListViewData to a flat lane list, groups workers by host+pedal into byLane + ungrouped buckets, renders each LaneTile + an ungrouped-workers block at the bottom.",
+        "honesty_state": "If data null -> empty plane (no fake board). If lanes empty -> quiet line 'No active lanes — the board is empty'. If rosterUnreachable -> LOUD title-row warn 'congress roster unreachable — showing last-known lanes' (red text). Ungrouped workers labeled honestly as inferred."
+      },
+      {
+        "name": "LaneTile",
+        "purpose": "Per-lane card: avatar, title (session.name), context-pressure chip, identity sub-line (congressIdentity or honest 'no seat role — not a congress lane'), status-dot + thought-line (voiceThought), expand chevron, live-output tail (lastAssistantText gated on renderSafe), and WorkerFanout underneath.",
+        "honesty_state": "State comes from laneHonestState (working=GREEN pulsing, blocked=AMBER, idle=GREY, done=RED, unverified=GREY). Plain-session fallback per G10/G14: 'waiting' -> GREY not GREEN. Tail honestly says 'no live output tail wired yet — the oracle hasn't published a render-safe transcript signal' when absent."
+      },
+      {
+        "name": "WorkerFanout",
+        "purpose": "God->worker roster strip under each LaneTile: up to 8 avatars + '+N more'. Header shows 'workers · N' + 'grouped by host+pedal — inferred, not a proven link' when inferred=true (which is always today, since CongressSeatSchema has no laneId/parentSeat field).",
+        "honesty_state": "Only renders when workers.length > 0. Inferred-grouping label prevents claiming a stronger hierarchy than the data supports (§0 no-faked-hierarchy)."
+      },
+      {
+        "name": "WorkerAvatar",
+        "purpose": "Single worker face + StatusDot + label (currentWork || model || role || seat). Reuses deriveLiveness — same honest verdict logic as the god-lane dot, never a separate hard-coded green for workers.",
+        "honesty_state": "alive=GREEN pulsing, wedged=AMBER, dead=RED, else GREY. Monochromed avatar when not alive."
+      },
+      {
+        "name": "VitalsStrip",
+        "purpose": "Plane 3 — four dots (VRAM/DISK/CTX/BKLG) with label + one-line summary each; tap expands to the full underlying gauge component.",
+        "honesty_state": "vitalDotColor splits four states per Slice 2 G17/G18: unreachable && hasData -> RED (DEAD); unreachable && !hasData -> GREY (BINDING, 'reading…'); reachable && warning -> AMBER (DEGRADED); reachable && healthy -> GREEN. Summary text also splits binding/dead."
+      },
+      {
+        "name": "VramGauge / DiskGauge / ContextGauge / BacklogGauge",
+        "purpose": "Expanded full-gauge components rendered under the strip when their dot is tapped (from @/components/*Gauge).",
+        "honesty_state": "Inherited — each has its own FeedUnreachable minHeight reserve per spec's lean invariant."
+      },
+      {
+        "name": "FeedUnreachable (imported)",
+        "purpose": "LOUD signal component used by NeedsYouPlane empty+unreachable path.",
+        "honesty_state": "Renders reserved-height LOUD banner — never blank."
+      }
+    ],
+    "data_hooks": [
+      {
+        "name": "useWarden",
+        "path": "C:\\Users\\Carlos\\Desktop\\projects\\happy\\packages\\happy-app\\sources\\hooks\\useWarden.ts",
+        "feed": "poll GET /v1/warden via useHonestFeed (5s default, 4s per-poll timeout, LOUD after 3 failures ~15s)",
+        "honest_death_status": "HONEST-DEAD-CAPABLE. Passes hasContent:(items)=>items.length>0 so an emptied queue that then goes dark still escalates LOUD instead of masquerading as calm all-clear."
+      },
+      {
+        "name": "useCongressRoster",
+        "path": "C:\\Users\\Carlos\\Desktop\\projects\\happy\\packages\\happy-app\\sources\\hooks\\useCongressRoster.ts",
+        "feed": "poll GET /v1/congress/roster via useHonestFeed; splits seats into sessions Map (dual-keyed by claudeSid + cuid) and workers[] list",
+        "honest_death_status": "HONEST-DEAD-CAPABLE. Uses fast-deep-equal/es6 to correctly diff Map payloads. hasContent is set inside the hook file (verified) so an emptied roster still goes LOUD."
+      },
+      {
+        "name": "useVisibleSessionListViewData",
+        "path": "C:\\Users\\Carlos\\Desktop\\projects\\happy\\packages\\happy-app\\sources\\hooks\\useVisibleSessionListViewData.ts",
+        "feed": "reads useSessionListViewData (local sync engine's projection over Socket.io sessions) — not a polled HTTP feed, so no useHonestFeed",
+        "honest_death_status": "N/A for feed-death honesty (comes from the sync-engine reducer, not an HTTP oracle). TheWorkPlane still treats data===null as 'first paint' (quiet) rather than a fake empty board."
+      },
+      {
+        "name": "useVram",
+        "path": "C:\\Users\\Carlos\\Desktop\\projects\\happy\\packages\\happy-app\\sources\\hooks\\useVram.ts",
+        "feed": "poll GET /v1/vram via useHonestFeed (default 5s cadence, server ts-age staleness backstop)",
+        "honest_death_status": "PARTIAL. Has the three-state discipline, but NO hasContent predicate — a feed that goes permanently dark after publishing once may keep-last-good instead of re-tripping LOUD if the server reports non-stale but empty. This is the flagged out-of-lane issue from the Slice 2 completion notes."
+      },
+      {
+        "name": "useDisk",
+        "path": "C:\\Users\\Carlos\\Desktop\\projects\\happy\\packages\\happy-app\\sources\\hooks\\useDisk.ts",
+        "feed": "poll GET /v1/disk via useHonestFeed at 30s interval (disk moves slowly)",
+        "honest_death_status": "PARTIAL — same as useVram: no hasContent predicate, so a stealth-empty view can mask a real outage. Flagged in the Slice 2 desk-verify."
+      },
+      {
+        "name": "useHeartbeat",
+        "path": "C:\\Users\\Carlos\\Desktop\\projects\\happy\\packages\\happy-app\\sources\\hooks\\useHeartbeat.ts",
+        "feed": "poll GET /v1/heartbeat via useHonestFeed at 15s interval; daemonAlive is always true in the file so freshness IS liveness",
+        "honest_death_status": "PARTIAL — no hasContent predicate. Same flagged gap as useVram/useDisk."
+      },
+      {
+        "name": "useBacklog",
+        "path": "C:\\Users\\Carlos\\Desktop\\projects\\happy\\packages\\happy-app\\sources\\hooks\\useBacklog.ts",
+        "feed": "poll GET /v1/backlog via useHonestFeed at 30s interval",
+        "honest_death_status": "HONEST-DEAD-CAPABLE. Passes hasContent:(v)=>v.total>0 so an empty-but-present backlog still counts as nothing-to-keep — a subsequently-dead feed re-trips LOUD."
+      },
+      {
+        "name": "useNavigateToSession",
+        "path": "C:\\Users\\Carlos\\Desktop\\projects\\happy\\packages\\happy-app\\sources\\hooks\\useNavigateToSession.ts",
+        "feed": "router push handler — LaneTile onPress calls this to navigate to /session/[id]",
+        "honest_death_status": "N/A — navigation only."
+      },
+      {
+        "name": "useAuth (AuthContext)",
+        "path": "C:\\Users\\Carlos\\Desktop\\projects\\happy\\packages\\happy-app\\sources\\auth\\AuthContext.tsx",
+        "feed": "logout() surfaced through the NeedsYouCard reauth link when answerWarden returns authExpired",
+        "honest_death_status": "N/A — auth control surface."
+      }
+    ],
+    "ia_layer_current": "Flat list. TheWorkPlane flattens useVisibleSessionListViewData (which itself already collapses 'active-sessions' groups + individual 'session' items) into a plain LaneRow[] with NO date/project grouping ceremony — that browse-chrome is intentionally dropped per spec §2 ('every lane as an equal tile'). The GOD->worker fan-out DOES render VISUALLY as a tree: each LaneTile has an inline WorkerFanout strip underneath it showing up to 8 worker avatars (+N more), grouped by host+pedal proximity to the god-lane's seat. Workers with no matching lane render in a separate 'ungrouped' block at the bottom, honestly labeled. The grouping is marked 'inferred' every time (CongressSeatSchema has no laneId/parentSeat/ownerCuid field yet — host+pedal is the best available signal). No conductor/dispatch fan-out edges are drawn (there is only the roster's flat god+worker split; the spec's 'GOD->research/build/review fan-out edges' from the munder building are NOT rendered as edges — only as a co-located roster strip).",
+    "three_planes_status": {
+      "needs_you": "SHIPPED and honest. Warden-driven, sorted by blocking-count, three states covered (empty+healthy quiet / empty+unreachable LOUD / populated). Consequential-confirm reply controls render identically at every density per spec §3 capability-invariance. GAP: does not yet render any COST or GIT-push or DESTRUCTIVE bright-line gates — only warden knock-cards. Spec §0 wants those confirm-gates 'travel with the surface to every device'.",
+      "the_work": "SHIPPED and honest. Flat lane list, per-lane thought-line via voiceThought (banned-gerund rule inherited), honest state via laneHonestState (four labels + unverified), god->worker fan-out visible. GAPS: (a) no live output tail — canShowTail depends on seat.renderSafe===true && seat.lastAssistantText; when absent it honestly says 'no live output tail wired yet' but this is a spec §2 gap ('spawn one to see real Claude output stream in here'). (b) No dispatch/conductor fan-out EDGE rendering — only a co-located worker strip. (c) No visible 'the fan-out is visible' overseer->lane arrow when a conductor dispatches.",
+      "vitals": "SHIPPED and honest. Four dots (VRAM/DISK/CTX/BKLG), Slice 2 four-state color split (BINDING-grey / DEAD-red / DEGRADED-amber / healthy-green), summary text distinguishes 'reading…' vs \"can't read X\". Tap expands to full gauge. GAPS: (a) the strip's title label is hard-coded 'VITALS' with no scaled() typography — a minor Slice-3 miss (the label itself doesn't thread useDensity()). (b) three of the four underlying feeds (vram/disk/heartbeat) still lack hasContent — see Slice 2 desk-verify flag."
+    },
+    "posture_adaptive_status": "SHIPPED (Slice 3). Same component tree renders at three densities — no per-posture fork. Every atom threads useDensity(): NeedsYouCard, LaneTile, WorkerAvatar, WorkerFanout, and the ungrouped-workers block all read the DensityTokens for typeScale (via scaled()), cardGap, cardPaddingV/H, cardRadius, minTouchSize, laneAvatar/workerAvatarSize, autoExpandLanes. Capability is posture-invariant — the reply controls (Respond / Not now) render identically at every density, only spacing/type-scale changes. GAPS in threading: (1) VitalsStrip is the ONE atom NOT fully threaded — inside VitalsStrip the 'VITALS' title uses styles.planeTitle (hard-coded 13px) instead of scaled(13, dens.typeScale); vitalLabel and vitalSummary also use hard 11px sizes; vitalDotWrap uses hardcoded minWidth:140 / minHeight:36 / paddingHorizontal:10 / paddingVertical:8, and the row gap is 10 instead of dens.cardGap. useDensity() is called (as `dens`) but its tokens are only used for vitalsShowSummary logic-branch potential — not for the actual layout numbers. (2) DensityPicker itself is dev-only and uses hard-coded chip padding/typography (correct — it's not a shipped surface).",
+    "gaps_vs_spec": [
+      "§2 Plane 2 'motion / live tail of Claude output stream when expanded' — LaneTile shows lastAssistantText when renderSafe, else honestly says 'no live output tail wired yet'. No streaming SSE/socket transcript feed per-lane exists yet. This is spec §2's 'spawn one to see real output stream in here' munder-equivalent — NOT SHIPPED.",
+      "§2 Plane 2 'the fan-out is visible … the surface shows the GOD->lanes fan-out as the living structure' — SHIPPED as a co-located roster strip (WorkerFanout) but NOT as drawn EDGES/arrows between conductor and lanes. When a workflow/overseer is dispatching there is no visual dispatch tree — only the static host+pedal groupings.",
+      "§0 / §3 'Consequential-confirm gates (COST / GIT-push / DESTRUCTIVE) travel with the surface to every device' — NeedsYou renders warden knock-cards only. No dedicated cost-confirm / git-push-confirm / destructive-confirm cards are surfaced in the plane. NOT SHIPPED.",
+      "§3 posture-adaptive VitalsStrip — VitalsStrip calls useDensity() (dens) but its layout numbers, typography, and title are hard-coded instead of scaled/threaded. GAP: partial Slice 3 coverage.",
+      "§6 Slice 4 'cut to live, Carlos-gated, with a live demo' — NOT STARTED. cockpit-v2.tsx lives at dev/cockpit-v2.tsx; SessionsList.tsx is still the live surface.",
+      "§7 loom's card-model cutover gate — OPEN FORK, not resolved here. The state-derived card model is Slice-4-gated.",
+      "§7 push posture — spec says '24 commits deep, never pushed'. Actual today: lane/happy-dev is 78 commits ahead of origin/main and there is NO origin/lane/happy-dev remote branch — the lane is entirely local. Push decision is deferred to Slice 4.",
+      "§5 G13 AbortController — spec's trust-debt floor asks for per-poll AbortController on the underlying fetches. Sliced-2 comments explicitly acknowledge this is UNSHIPPED — useHonestFeed races with a 4s timeout but does not cancel the in-flight fetch; the wrapper below (utils/time.ts backoff + apiXxx.ts fetchers) would need signal-threading. Flagged, not silently skipped.",
+      "§5 G17/G18 downstream feeds — three of four vitals hooks (useVram/useDisk/useHeartbeat) lack hasContent predicate, so a permanently-dead feed after a good read may keep-last-good rather than re-trip LOUD. Flagged in Slice-2 completion notes as out-of-lane."
+    ],
+    "what_happy_has_that_the_building_does_not": [
+      "Multi-surface posture-adaptivity — Happy is one React-Native + Expo Router codebase that renders on iOS/Android/web/Tauri desktop, and Slice 3 proved a single component tree renders at desktop/deck/phone densities. The building is Electron-only, desktop-bound; it cannot follow Carlos to the phone or the Deck.",
+      "The honesty-spine primitive (useHonestFeed) — three-state RENDER/QUIET/LOUD feed discipline with per-poll timeout, keep-last-good, and hasContent-aware LOUD escalation, shared across every gauge. Every polled feed inherits this for free. The building has no equivalent shared honesty primitive.",
+      "The consequential-confirm gate discipline — NeedsYouPlane's reply controls are capability-invariant across densities, and confirm-gates are explicitly designed to travel with the surface to every device (bright lines from CLAUDE.md). The building lets the desk pilot freely but has no gate-plane concept.",
+      "End-to-end encrypted state sync via libsodium and Socket.io reconciled through the sync/reducer engine — files are the self, encrypted across devices. The building's state lives in a local Electron process.",
+      "QR-code paired authentication + auth-expired reauth flow (rendered honestly inside a knock-card via NeedsYouCard's errored==='auth' path). The building has no formal auth-surface.",
+      "Congress roster JOIN survival — dual-keying by claudeSid + cuid so the Hearth-side join survives daemon-restart cuid churn (useCongressRoster.ts). The building talks to a local floor-state and does not need to survive daemon-restart identity churn.",
+      "Reserved-height / no-reflow-on-poll lean invariant (min-heights on LaneTile, vitalDotWrap, every gauge, FeedUnreachable). The building's Pixi scene does not need this because it isn't a scrolling list.",
+      "Warden knock-card protocol backed by GET /v1/warden — the Happy-side interrupt plane is already a real, remotely-answerable feed with optimistic overlay and reauth recovery. The building has no equivalent shared-server knock-queue.",
+      "Mobile push posture (implied by Expo's push architecture) — a Happy client can be notified. The building requires being at the desktop."
+    ],
+    "push_posture": "lane/happy-dev exists ONLY locally. There is no origin/lane/happy-dev remote-tracking branch (verified: git branch -r shows only origin/HEAD, origin/main, and fork/fix/android-cleartext-self-host). Depth vs origin/main: 78 commits ahead, 0 behind. Spec §7 (dated 2026-07-01) said '24 commits deep, never pushed' — since then Slice 2 + Slice 3 + docs banking have added ~54 more local commits. Deploy gate: Vesta/desktop deploy on push (Carlos-gated per spec §7). Cutover to a shipped surface requires Carlos's push call — the Slice 4 gate.",
+    "slice_4_prerequisites": [
+      "Route wiring: cockpit-v2 currently lives at packages/happy-app/sources/app/(app)/dev/cockpit-v2.tsx. Cutting to live means either (a) replacing SessionsList.tsx's default export with a CockpitV2 render, or (b) adding CockpitV2 as the default landing surface under (app)/_layout.tsx per spec §2 'Default view is THIS'. Neither is done.",
+      "Loom's card-model cutover gate (§7) — Slice 4 is where loom's state-derived card model lands. Need to surface the demo to Carlos and get his explicit go before cutting blind.",
+      "Resolve the open fork on the streaming Claude-output tail — spec §2 requires 'a live tail of the Claude output stream when expanded'. Today canShowTail is gated on seat.renderSafe && seat.lastAssistantText; a genuinely streaming SSE/socket feed per-lane does not exist. Either (a) accept the honest 'no tail wired yet' fallback for cut-to-live, or (b) wire an SSE tail feed first.",
+      "Backfill the three missing hasContent predicates on useVram/useDisk/useHeartbeat so the vitals strip cannot false-green a permanently-dead feed post-cutover — flagged in Slice-2 desk-verify.",
+      "Backfill AbortController threading through apiXxx.ts fetchers + utils/time.ts backoff so useHonestFeed can truly cancel a hung fetch instead of racing and ignoring it (§5 G13).",
+      "Thread useDensity() through VitalsStrip's title/label/summary/dot-wrap layout numbers so the vitals plane matches Slice 3's capability-invariant posture-adaptivity end-to-end (Slice 3 partially skipped this atom).",
+      "Consequential-confirm gate atoms — Cost / Git-push / Destructive knock-card types (or a broader confirm-gate variant of NeedsYouCard) so §0 bright lines actually render in the plane before it becomes the live daily driver.",
+      "Push decision — lane/happy-dev is 78 commits deep, no remote tracking branch, deploy gates on push (Vesta/desktop). Slice 4 cannot deploy until Carlos green-lights the push. This is the terminal blocker.",
+      "Typecheck + agent-browser Chrome verify of all three densities against LIVE feeds on the live route (currently only verified on the dev route). No unit-test coverage exists for CockpitV2 today (grep of dev/ shows no cockpit-v2.test.tsx).",
+      "SessionsList.tsx keeps its own concerns (project grouping / archive toggle) that CockpitV2 does not — a plan for what happens to the browse-chrome (date/project headers, archive toggle) after cutover: absorb into a secondary browse view, or drop as spec §2 implies."
+    ]
+  },
+  "delta": {
+    "headline": "The single highest-value next move is absorbing the building's persistent xterm terminal pool + PTY stream bridge into Happy so LaneTile's expanded view actually STREAMS live Claude output — that closes the biggest work-first gap (§2 \"spawn one to see real output stream in here\") without touching the Pixi scene fork.",
+    "convergence_direction_confirmed": "CONFIRMED — \"Happy ABSORBS the building's IA\" holds; the inventory strengthens it, because every load-bearing building atom (persistent xterm pool, hive router, oracle, closing-time, breaker precedence, boot-gate, envelope fan-out) is a MECHANISM/PROTOCOL that can be lifted independently of the Electron shell, while every Happy-only asset (useHonestFeed, e2e sync, congress-roster dual-key, posture-adaptive tree, warden knock-plane) is strictly multi-surface and cannot be reproduced in Electron — so the absorb direction is the only one that preserves both sides' best primitives.",
+    "absorbable_now": [
+      {
+        "item": "Persistent xterm pool + PTY stream bridge (LaneTile live output tail)",
+        "from_where": "building/munder-difflin-fork2/src/renderer/src/components/terminalPool.ts + main/pty.ts + crew/GodTerminalLens.tsx (read-only-by-default pattern)",
+        "to_where": "happy/packages/happy-app/sources/app/(app)/dev/cockpit-v2.tsx LaneTile expanded slot; new sources/components/LiveOutputTail.tsx backed by a new sources/hooks/useLaneTail.ts feeding off the sync engine's assistant-message stream (web/Tauri = xterm.js WebGL renderer; iOS/Android = plain ScrollView of same events)",
+        "rough_size": "L",
+        "done_check": "Expand a LaneTile on desktop web -> live Claude bytes stream in a read-only xterm; unlock-typing toggle is present but off by default; on phone posture same expand renders a plain scrolling text view of the last N assistant messages; canShowTail no longer needs the 'no live output tail wired yet' honesty fallback for renderSafe seats.",
+        "sonnet_lane_or_desk": "desk-designs / sonnet-lane-builds — xterm-in-Tauri is mechanical port, but the read-only/unlock-typing UX and the phone-fallback rendering are taste decisions the desk must make"
+      },
+      {
+        "item": "Boring-when-healthy thought-line copy invariant, made explicit",
+        "from_where": "building/munder-difflin-fork2/src/renderer/src/scene/office/ThoughtBubble.ts copy table + Carlos-authored corpus (running the floor / reading inbox / compacting context)",
+        "to_where": "happy/packages/happy-app/sources/utils/voiceThought.ts (already exists per LaneTile inventory) — codify the corpus + a lint helper",
+        "rough_size": "S",
+        "done_check": "voiceThought.ts exports a stable curated line pool + a dev-only banned-gerund lint that fails CI on new -ing entries that aren't grandfathered; snapshot test proves no lane surface renders a banned line.",
+        "sonnet_lane_or_desk": "sonnet-lane"
+      },
+      {
+        "item": "AwarenessBeat error-boundary + monotonic-beat honesty spine",
+        "from_where": "building/munder-difflin-fork2/src/renderer/src/crew/AwarenessBeat.tsx + main/index.ts beat.json monotonic-seq writer",
+        "to_where": "happy/packages/happy-app/sources/app/(app)/dev/cockpit-v2.tsx root wrap + new sources/hooks/useCockpitBeat.ts posting monotonic beats to /v1/heartbeat (or into the sync engine); useHeartbeat.ts consumes it so a wedged cockpit tree renders WEDGED from OUTSIDE the process",
+        "rough_size": "M",
+        "done_check": "Throwing inside NeedsYouPlane at runtime stops the beat -> useHeartbeat flips to WEDGED (amber) within 20s -> VitalsStrip CTX/BKLG dot shows honest degradation; verified with agent-browser at desktop density.",
+        "sonnet_lane_or_desk": "desk (the failure-inversion invariant is a taste call about where the boundary sits)"
+      },
+      {
+        "item": "hasContent predicate backfill for useVram / useDisk / useHeartbeat",
+        "from_where": "pattern already in happy/packages/happy-app/sources/hooks/useWarden.ts and useBacklog.ts",
+        "to_where": "happy/packages/happy-app/sources/hooks/{useVram,useDisk,useHeartbeat}.ts",
+        "rough_size": "S",
+        "done_check": "Simulated empty-but-fresh payload after a good one -> LOUD escalation on all three feeds; Slice-2 desk-verify flag closed.",
+        "sonnet_lane_or_desk": "sonnet-lane"
+      },
+      {
+        "item": "VitalsStrip posture threading (title / label / summary / dot-wrap)",
+        "from_where": "pattern already in happy LaneTile / NeedsYouCard (useDensity + scaled())",
+        "to_where": "happy/packages/happy-app/sources/app/(app)/dev/cockpit-v2.tsx VitalsStrip subtree",
+        "rough_size": "S",
+        "done_check": "DensityPicker DESKTOP/DECK/PHONE all rescale VITALS title, four vital labels, four summaries, and dot-wrap minWidth/paddingV/H/gap; agent-browser verifies at all three widths.",
+        "sonnet_lane_or_desk": "sonnet-lane"
+      },
+      {
+        "item": "AbortController threading into useHonestFeed's fetch chain",
+        "from_where": "spec §5 G13 — pattern is standard AbortSignal wiring",
+        "to_where": "happy/packages/happy-app/sources/hooks/useHonestFeed.ts + underlying apiXxx.ts fetchers + utils/time.ts backoff",
+        "rough_size": "M",
+        "done_check": "A stalled fetch is truly cancelled at the 4s timeout (verified with a delayed-response mock); useHonestFeed no longer races-and-ignores.",
+        "sonnet_lane_or_desk": "sonnet-lane"
+      },
+      {
+        "item": "CLOSING TIME graceful-shutdown protocol (mail-based, WIP-safe)",
+        "from_where": "building/munder-difflin-fork2/src/main/closingTime.ts (rides existing hive rails, never types into terminals)",
+        "to_where": "happy/packages/happy-app/sources/hooks/useClosingTime.ts + a NeedsYou plane variant card ('closing time — N/M workers acked') and a Vitals dot for shutdown-in-progress state",
+        "rough_size": "M",
+        "done_check": "Triggering closing-time via the cockpit sends a broadcast to all worker seats, tracks ACKs, surfaces progress as a knock-card with countdown, teardown proceeds only after ACK-or-timeout; nothing typed into terminals.",
+        "sonnet_lane_or_desk": "desk (the UX for a WIP-safe close on a shared server is novel — needs a taste pass)"
+      },
+      {
+        "item": "Breaker-precedence pin (constrained/stopped overrides hook-derived status)",
+        "from_where": "building/munder-difflin-fork2/src/renderer/src/hooks/useHive.ts effect 2b + breakerLevel ref",
+        "to_where": "happy/packages/happy-app/sources/app/(app)/dev/cockpit-v2.tsx laneHonestState + StatusDot logic",
+        "rough_size": "S",
+        "done_check": "A seat in breaker=constrained pins to 'looping' amber and blocks hook-flip-back-to-green until a Stop clears it; kills the 'working-flicker' the spec calls out.",
+        "sonnet_lane_or_desk": "sonnet-lane"
+      },
+      {
+        "item": "Consequential-confirm knock-card variants (COST / GIT-push / DESTRUCTIVE)",
+        "from_where": "CLAUDE.md bright lines + spec §0/§3 (no direct building donor — building runs unlocked, this is a Happy invariant)",
+        "to_where": "happy/packages/happy-app/sources/app/(app)/dev/cockpit-v2.tsx NeedsYouCard — add gate variants alongside GATE/ROUTINE with distinct border colors and a MANDATORY-confirm affordance (no swipe-dismiss)",
+        "rough_size": "M",
+        "done_check": "A cost-gate / git-push-gate / rm-rf-gate card renders identically at all three densities, cannot be 'Not now'-dismissed, and traveling to phone posture preserves the confirm capability.",
+        "sonnet_lane_or_desk": "desk (bright-line UX is not a sonnet call)"
+      }
+    ],
+    "absorb_but_needs_design": [
+      {
+        "item": "Envelope fan-out visualization (paper flying from god desk to worker desk)",
+        "why_needs_design": "In the building this rides a PixiJS scene with fixed desk pixel positions; Happy has no scene, only a flat lane list with WorkerFanout avatars. Direct port is not meaningful. Design fork: (a) SVG/canvas overlay that draws short animated dispatch arrows between LaneTile -> WorkerAvatar when a hive message routes, gated on renderSafe; (b) a per-worker 'inbound' pulse that ripples the avatar without a drawn edge; (c) skip visualization and just log to a dispatch ledger surface. Also needs a hive-message-router feed on the Happy server (does not exist yet)."
+      },
+      {
+        "item": "Two-tier agent hierarchy (assistant/Dwight enriches prompts before god)",
+        "why_needs_design": "CongressSeatSchema has no laneId/parentSeat/ownerCuid field, so today WorkerFanout groups by host+pedal 'inferred'. Absorbing the assistant tier means extending the seat schema with an explicit parent/role edge, which affects roster, sync-engine, and every downstream consumer. Also raises the question of whether Happy models the tier at all or leaves it building-only."
+      },
+      {
+        "item": "Hive on-disk routed mail (outbox/inbox drain + act taxonomy request/inform/propose/query/agree/refuse/done)",
+        "why_needs_design": "Happy's file-layer is per-thread cards; the building is per-agent mail with a single-committer git router. Making Happy speak hive mail is a first-class server work-item (new /v1/hive/route endpoint? sync-engine reducer for mail events?) and a schema decision on whether Happy adopts the act enum. Big surface, bright-line-adjacent."
+      },
+      {
+        "item": "Two-layer floor-state oracle (claim.json + monotonic beat.json + 9 verdict enum)",
+        "why_needs_design": "AwarenessBeat error-boundary is absorbable now (small); the FULL claim/beat/mutex oracle with 9 verdict states is a rethink of how remote seats prove liveness through Happy's server. Currently useHeartbeat conflates freshness with aliveness (daemonAlive is hard-true). A real port needs a server-side verdict computer and a schema for claim/beat that a remote daemon writes. Big enough to be its own slice."
+      },
+      {
+        "item": "Loopback PTY gateway / remote-transcript bridge",
+        "why_needs_design": "The building's remotePtyBridge + ptyGateway is a real port+token bridge for cross-floor terminal streaming. Happy's equivalent needs to decide whether streams flow through the encrypted sync channel (e2e-preserving) or a separate transport, and how key material is handled on Tauri vs phone. Ties directly to the live-tail slice above but is a bigger transport question."
+      }
+    ],
+    "do_not_absorb": [
+      {
+        "item": "Full PixiJS OfficeFloor walking-avatar scene as the primary surface",
+        "reason": "1895 lines, PixiJS v8 with unsafe-eval CSP shim, Tiled map + tilesets, A* pathfinding — desktop-only tech that shatters the multi-surface invariant Happy is built on. Absorbing it as-is would fork the codebase back into a desktop-primary posture and undo Slice 3. See PIXI VERDICT below for the split."
+      },
+      {
+        "item": "Dual-shell architecture (App.tsx + CrewShell.tsx picked at build time)",
+        "reason": "The building has TWO renderer shells because it grew that way; Happy's whole point post-Slice-3 is ONE component tree at three densities. Adopting a build-time shell switch is a regression."
+      },
+      {
+        "item": "Electron-specific main-process primitives (Tier B named-mutex holder child PowerShell, node-pty, WebGL xterm as PRIMARY surface)",
+        "reason": "Named kernel mutexes and PowerShell child processes are Windows/Electron-only; node-pty doesn't exist in a phone runtime. These stay as building-side implementation details; Happy consumes their outputs via server APIs but never runs them locally."
+      },
+      {
+        "item": "The demo/mock event loop (mockEvents.ts + cth:demo-handoff)",
+        "reason": "Happy already has a stronger discipline via useHonestFeed's three-state RENDER/QUIET/LOUD and the QUIET-when-empty-and-healthy invariant; a demo loop would tempt fake-liveness violations. If a demo mode is needed for onboarding it should be built on the honesty spine, not ported."
+      },
+      {
+        "item": "Full CrewShell M0..M8 milestone-proof scaffolding (facilities panel, PA broadcast panel, morning report, 2017-line shell)",
+        "reason": "That's 'building runs itself' surface area that is out of scope for the work-first cockpit and would drag Happy into building-scope. Absorb specific atoms (PulsePanel, NeedsYouStrip, FloorStack) not the shell."
+      },
+      {
+        "item": "Copilot PWA at main/copilot-pwa/",
+        "reason": "Happy IS the phone-cockpit answer here. The god-reply-bubble UX is worth studying for the LiveOutputTail phone fallback but the embedded PWA itself is superseded by Happy."
+      },
+      {
+        "item": "cth-hook.cjs shim + merged-ptu.cjs written into every session on bootstrap",
+        "reason": "Deep coupling to the building's hive-hook wire format. Happy should receive hive events through its own server API rather than reproduce the hook-shim bootstrap discipline in a mobile app."
+      }
+    ],
+    "the_pixi_scene_verdict": "DEFER-AND-ABSTRACT (split verdict). Do NOT absorb the PixiJS OfficeFloor as a primary surface in Slice 4 or 5 — it is desktop-only and would break the multi-surface capability-invariance Slice 3 just proved. But the METAPHOR is load-bearing (\"the fan-out is visible / fun to watch\") and cannot be discarded either. Split: (1) IMMEDIATE — abstract the metaphor into three cross-surface primitives that DO travel: an existing WorkerFanout strip (shipped), a lightweight per-lane 'inbound envelope' pulse ring on the avatar (new, cheap, works on RN+Web), and a dispatch-ledger row in the expanded LaneTile detail. Together these give you 'the fan-out is visible' without a scene. (2) LATER (Slice 6+, after cutover) — reintroduce the full walking scene as a Tauri-desktop-ONLY 'office view' route (a lens onto the same congress-roster + hive-message feed, feed-cast pattern from the building). Phone/deck never see it; desktop optionally opens it as a second surface. This preserves the fun-to-watch heart on the device where it belongs, without regressing the primary cockpit. Rationale: the walking scene's operability layer (11 onAgentSelect/onAgentHover call sites confirmed) proves the click-to-select model works, but that model is duplicative of tapping a LaneTile — it is delight, not capability. Delight belongs behind the capability, not in front of it.",
+    "ranked_next_moves": [
+      "1. BUILD LiveOutputTail (persistent xterm on web/Tauri, plain scroll on phone) backed by a new useLaneTail hook that streams assistant messages from the sync engine — this is the largest visible §2 gap and unlocks the 'spawn one to see real Claude output' promise. Desk-designs, sonnet-builds the port.",
+      "2. DECIDE the push gate for lane/happy-dev (78 commits deep, no remote branch, deploys on push). This is Slice 4's terminal blocker per spec §7 — must precede cutover. Carlos-only call.",
+      "3. BUILD the Slice-2 hygiene backfill batch: hasContent on useVram/useDisk/useHeartbeat + AbortController threading through useHonestFeed + VitalsStrip posture threading. All three are small sonnet-lane items that close acknowledged flags before cockpit-v2 becomes the live daily driver.",
+      "4. BUILD AwarenessBeat + monotonic-beat honesty spine — a react error-boundary at cockpit-v2 root that stops a beat on render-death so a wedged cockpit reads WEDGED from outside the process. Cheap, high-value, and required-in-spirit before cutover.",
+      "5. BUILD consequential-confirm knock-card variants (COST / GIT-push / DESTRUCTIVE) — bright-lines must travel with the surface before the surface becomes the daily driver. Desk-designs the UX (cannot swipe-dismiss, capability-invariant across densities), sonnet-builds."
+    ],
+    "open_forks_for_carlos": [
+      "Push gate for lane/happy-dev: cutover to live cannot happen until you green-light pushing 78 local commits (Vesta/desktop deploys on push per spec §7). This is the Slice 4 terminal blocker — the desk cannot make this call alone.",
+      "PixiJS scene posture: DEFER-AND-ABSTRACT is the desk's recommendation, but the alternatives (a) absorb full scene as Tauri-only primary; (b) build a low-fi cross-surface scene from day one; (c) drop the scene entirely as delight-not-capability — are all live. This is a taste call about how much of the building's soul travels.",
+      "Live-output-tail transport: does the streaming Claude-byte tail flow through the encrypted sync channel (preserves e2e, more work) or a separate server-mediated PTY-bridge transport (faster to ship, weaker crypto story)? Bright-line-adjacent because it touches how 'files are self' extends to a byte stream.",
+      "Two-tier assistant/god hierarchy: absorbing the building's assistant role (Dwight enriches prompts before god) requires extending CongressSeatSchema with a parent/role edge, which ripples into every roster consumer. Ship it as a schema change, or leave as building-only and let Happy render only the flat god+workers view?",
+      "Where the cockpit-v2 route lives at cutover: replace SessionsList.tsx default export vs land CockpitV2 as (app)/_layout.tsx default landing surface. Also: what happens to SessionsList's browse-chrome (date/project headers, archive toggle) — absorbed into a secondary view, or dropped per spec §2's 'every lane as an equal tile' implication?"
+    ]
+  }
+}
