@@ -1,4 +1,5 @@
 import { AuthCredentials } from '@/auth/tokenStorage';
+import { feedDiagnostic } from './feedDiagnostic';
 import { backoff } from '@/utils/time';
 import { getServerUrl } from './serverConfig';
 import { getHappyClientId } from './apiSocket';
@@ -38,7 +39,7 @@ export async function getWarden(
         const data = await response.json();
         const parsed = WardenResponseSchema.safeParse(data);
         if (!parsed.success) {
-            console.error('Failed to parse warden response:', parsed.error);
+            feedDiagnostic('warden', parsed.error);
             return { stale: true, items: [] };
         }
 
@@ -80,7 +81,7 @@ export async function getWardenStatus(
         const data = await response.json();
         const parsed = WardenStatusResponseSchema.safeParse(data);
         if (!parsed.success) {
-            console.error('Failed to parse warden status response:', parsed.error);
+            feedDiagnostic('warden-status', parsed.error);
             return { stale: true, ts: null, overall: null, checks: null };
         }
 

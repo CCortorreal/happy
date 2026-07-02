@@ -1,4 +1,5 @@
 import { AuthCredentials } from '@/auth/tokenStorage';
+import { feedDiagnostic } from './feedDiagnostic';
 import { backoff } from '@/utils/time';
 import { getServerUrl } from './serverConfig';
 import { getHappyClientId } from './apiSocket';
@@ -29,7 +30,7 @@ export async function getVram(credentials: AuthCredentials, signal?: AbortSignal
         const data = await response.json();
         const parsed = VramResponseSchema.safeParse(data);
         if (!parsed.success) {
-            console.error('Failed to parse vram response:', parsed.error);
+            feedDiagnostic('vram', parsed.error);
             return { stale: true, view: null };
         }
         return parsed.data;

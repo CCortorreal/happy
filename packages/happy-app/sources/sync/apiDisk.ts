@@ -1,4 +1,5 @@
 import { AuthCredentials } from '@/auth/tokenStorage';
+import { feedDiagnostic } from './feedDiagnostic';
 import { backoff } from '@/utils/time';
 import { getServerUrl } from './serverConfig';
 import { getHappyClientId } from './apiSocket';
@@ -29,7 +30,7 @@ export async function getDisk(credentials: AuthCredentials, signal?: AbortSignal
         const data = await response.json();
         const parsed = DiskResponseSchema.safeParse(data);
         if (!parsed.success) {
-            console.error('Failed to parse disk response:', parsed.error);
+            feedDiagnostic('disk', parsed.error);
             return { stale: true, view: null };
         }
         return parsed.data;

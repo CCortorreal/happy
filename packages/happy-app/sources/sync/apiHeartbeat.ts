@@ -1,4 +1,5 @@
 import { AuthCredentials } from '@/auth/tokenStorage';
+import { feedDiagnostic } from './feedDiagnostic';
 import { backoff } from '@/utils/time';
 import { getServerUrl } from './serverConfig';
 import { getHappyClientId } from './apiSocket';
@@ -29,7 +30,7 @@ export async function getHeartbeat(credentials: AuthCredentials, signal?: AbortS
         const data = await response.json();
         const parsed = HeartbeatResponseSchema.safeParse(data);
         if (!parsed.success) {
-            console.error('Failed to parse heartbeat response:', parsed.error);
+            feedDiagnostic('heartbeat', parsed.error);
             return { stale: true, view: null };
         }
         return parsed.data;

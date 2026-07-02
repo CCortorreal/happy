@@ -1,4 +1,5 @@
 import { AuthCredentials } from '@/auth/tokenStorage';
+import { feedDiagnostic } from './feedDiagnostic';
 import { backoff } from '@/utils/time';
 import { getServerUrl } from './serverConfig';
 import { getHappyClientId } from './apiSocket';
@@ -32,7 +33,7 @@ export async function getCongressKanban(credentials: AuthCredentials): Promise<C
         const data = await response.json();
         const parsed = CongressKanbanResponseSchema.safeParse(data);
         if (!parsed.success) {
-            console.error('Failed to parse congress kanban response:', parsed.error);
+            feedDiagnostic('congress-kanban', parsed.error);
             return { ts: null, stale: true, floors: [] };
         }
 

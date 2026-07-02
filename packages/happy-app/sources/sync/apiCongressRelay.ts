@@ -1,4 +1,5 @@
 import { AuthCredentials } from '@/auth/tokenStorage';
+import { feedDiagnostic } from './feedDiagnostic';
 import { backoff } from '@/utils/time';
 import { getServerUrl } from './serverConfig';
 import { getHappyClientId } from './apiSocket';
@@ -32,7 +33,7 @@ export async function getCongressRelay(credentials: AuthCredentials): Promise<Co
         const data = await response.json();
         const parsed = CongressRelayResponseSchema.safeParse(data);
         if (!parsed.success) {
-            console.error('Failed to parse congress relay response:', parsed.error);
+            feedDiagnostic('congress-relay', parsed.error);
             return { ts: null, stale: true, items: [] };
         }
 
