@@ -16,6 +16,7 @@ import { useVisibleSessionListViewData } from '@/hooks/useVisibleSessionListView
 import { useCongressRoster } from '@/hooks/useCongressRoster';
 import { useCongressTree, CongressTreeNode, MOCK_RECURSIVE_ROSTER } from '@/hooks/useCongressTree';
 import { useNavigateToSession } from '@/hooks/useNavigateToSession';
+import { useLaneTail } from '@/hooks/useLaneTail';
 import { CongressSeat } from '@/sync/congressTypes';
 import { SessionRowData } from '@/sync/storage';
 import { deriveLiveness } from '@/sync/liveness';
@@ -556,12 +557,13 @@ function LaneTile({ row, rosterUnreachable, selected, workers, laneIndex, depth 
     // with no seat just gets its subtitle (the best honest signal this data layer has).
     const workLine = thought?.text ?? session.subtitle ?? 'no work-object signal yet';
 
-    // Live output tail: the data layer does NOT yet expose a streaming Claude-output
-    // tail per lane (grepped — no such feed exists today). The closest honest signal is
-    // the oracle's lastAssistantText, privacy-gated by renderSafe (fail-closed). When
-    // that's absent we say so plainly rather than fabricate a tail.
-    const canShowTail = !!seat && seat.renderSafe === true && !!seat.lastAssistantText;
-    const tailText = canShowTail ? seat!.lastAssistantText! : null;
+    // Live output tail (VISION check 7): useLaneTail streams the SAME live message
+    // store the session chat screen reads — a real tail, not the oracle's
+    // lastAssistantText snapshot. Privacy gate is unchanged: a seat that isn't
+    // renderSafe stays gated with the exact same fail-closed treatment as before,
+    // regardless of what the tail hook returns.
+    const renderSafeGate = !seat || seat.renderSafe === true;
+    const { items: tailItems, isLoaded: tailLoaded } = useLaneTail(renderSafeGate ? session.id : null);
 
     // Desktop auto-expands this lane's tail inline (spec §3 "terminals expandable
     // inline" — dense multi-lane view); phone/deck stay collapsed to one honest
@@ -622,14 +624,42 @@ function LaneTile({ row, rosterUnreachable, selected, workers, laneIndex, depth 
 
             {effectiveExpanded ? (
                 <View style={styles.laneTail}>
-                    {tailText ? (
-                        <Text style={[styles.laneTailText, { fontSize: scaled(12, d.typeScale) }]} numberOfLines={6}>{tailText}</Text>
-                    ) : (
-                        // Honest-not-fabricated: the spec asks for a live output tail;
-                        // this data layer doesn't expose a stream yet — say so, don't fake it.
+                    {!renderSafeGate ? (
+                        // Same fail-closed privacy treatment lastAssistantText used —
+                        // a non-renderSafe seat never gets its transcript painted.
                         <Text style={[styles.laneTailMissing, { fontSize: scaled(12, d.typeScale) }]}>
-                            no live output tail wired yet — the oracle hasn't published a render-safe transcript signal for this lane
+                            output gated — this seat hasn't published a render-safe transcript signal
                         </Text>
+                    ) : !tailLoaded ? (
+                        <Text style={[styles.laneTailMissing, { fontSize: scaled(12, d.typeScale) }]}>
+                            loading tail…
+                        </Text>
+                    ) : tailItems.length === 0 ? (
+                        <Text style={[styles.laneTailMissing, { fontSize: scaled(12, d.typeScale) }]}>
+                            no output yet
+                        </Text>
+                    ) : d.density === 'desktop' ? (
+                        <ScrollView style={styles.laneTailScroll} nestedScrollEnabled>
+                            {tailItems.map((item) => (
+                                <Text
+                                    key={item.id}
+                                    style={[styles.laneTailText, { fontSize: scaled(12, d.typeScale) }]}
+                                    numberOfLines={3}
+                                >
+                                    {item.text}
+                                </Text>
+                            ))}
+                        </ScrollView>
+                    ) : (
+                        tailItems.slice(-4).map((item) => (
+                            <Text
+                                key={item.id}
+                                style={[styles.laneTailText, { fontSize: scaled(12, d.typeScale) }]}
+                                numberOfLines={1}
+                            >
+                                {item.text}
+                            </Text>
+                        ))
                     )}
                 </View>
             ) : null}
@@ -1286,6 +1316,9 @@ const styles = StyleSheet.create((theme) => ({
         paddingTop: 10,
         borderTopWidth: StyleSheet.hairlineWidth,
         borderTopColor: theme.colors.divider,
+    },
+    laneTailScroll: {
+        maxHeight: 200,
     },
     laneTailText: {
         fontSize: 12,
