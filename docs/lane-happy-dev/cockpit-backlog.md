@@ -10,11 +10,19 @@
 
 ## Ranking / sequence
 
-- **P0 — keystone + bug storm** (nothing else is verifiable until these land): CKP-21, CKP-01, CKP-02, CKP-03, CKP-08
+- **P0 — keystone + bug storm** ✅ ALL MERGED to `lane/happy-dev`: CKP-21, CKP-01, CKP-02, CKP-03, CKP-08
 - **P1 — the dead half** (feeds + the detail surface a human actually lands in): CKP-04, CKP-05, CKP-06, CKP-07, CKP-22
 - **P2 — readability redesign** (make it a command surface, not a dev tool): CKP-09, CKP-10, CKP-11, CKP-12, CKP-13, CKP-17
 - **P3 — steerability** (grow the hands): CKP-18, CKP-19, CKP-20
 - **P4 — polish**: CKP-14, CKP-15, CKP-16
+- **P0.5 — follow-up from the NOC swing**: CKP-23 (relocate cockpit out of `app/` — needs a Metro restart, Carlos-gated)
+
+> **2026-07-02 — the NOC swing landed on `noc/00-split`** (`c19b5c6`, stacked above the P0
+> tier). The ultracode six-lane build addressed **CKP-04, CKP-05, CKP-06, CKP-07, CKP-09,
+> CKP-10, CKP-11, CKP-12, CKP-13, CKP-15, CKP-16, CKP-18, CKP-19, CKP-20** (+ the split
+> `f2d76c8`). Rendered live + verified over time; both packages typecheck GREEN. Per-ticket
+> live acceptance re-verification is pending CKP-23 (the route relocation) so the tree can
+> run Metro-clean; until then the NOC works but emits phantom-route console warnings.
 
 ---
 
@@ -197,9 +205,28 @@ DESKTOP/DECK/PHONE/MOCK RECURSIVE ROSTER sit as primary tabs; "Mock roster" is a
 
 ---
 
+## CKP-23 · Relocate cockpit modules out of `app/` (kill route pollution) · `infra` · Major · OPEN
+**Follow-up from the NOC swing.** The cockpit component modules live under
+`sources/app/(app)/dev/cockpit/`, which is expo-router's route root — so every module
+(planes, components, NocGrid, colors, density, selection…) registers as a **phantom route**
+and pollutes the generated typed-route union (`.expo/types/router.d.ts`), crowding `/sessions`
+out and forcing a documented `as never` bridge in `SessionsLink.tsx`. Also emits 2 `missing
+default export` console warnings (RosterLedger, mockRoster). The page route `cockpit-v2.tsx`
+stays put; only the module dir moves.
+- **Fix:** `sources/app/(app)/dev/cockpit/` → `sources/cockpit/`; rewrite the shell's 11
+  `./cockpit/` imports → `@/cockpit/` + `usePosture.ts`'s one external import. **Proven safe:**
+  0 relative escapes (all 116 external imports use the `@/` alias, move-invariant), only 2
+  importers. **Blocked on:** a Metro restart (the live bundler holds file locks; the in-place
+  `mv` fails with EPERM) — elevated/disruptive = Carlos's hands, same posture as CKP-21.
+- **Accept:** after the move + Metro restart, `router.d.ts` regenerates clean (includes
+  `/sessions`, no `dev/cockpit/*` or `/../sync/*` phantom routes), the `as never` bridge is
+  removed, 0 `missing default export` warnings, typecheck green.
+
 ## Ledger (append per PR merge)
 
 - 2026-07-02 — Board created from the live audit + over-time instrumented observation. 22 tickets. Keystone = CKP-21 (server under watch). Nothing merged yet.
+- 2026-07-02 ~14:55 — **P0 tier fully MERGED to `lane/happy-dev`** (agent-reviewed CLEAN, Carlos-gated): CKP-21 + CKP-01 + CKP-03 + CKP-02 + CKP-08. Fast-forward pointer move (no checkout — the NOC build was live in the tree). Not pushed.
+- 2026-07-02 ~15:10 — **NOC swing landed** on `noc/00-split` `c19b5c6` (six-lane ultracode build + split `f2d76c8`). CKP-04/05/06/07/09/10/11/12/13/15/16/18/19/20 addressed; rendered live; a dup-key rendering bug found + fixed in integration; typecheck green. Spawned **CKP-23** (route relocation) as the one honest follow-up. Nothing pushed.
 - 2026-07-02 ~12:08 — **CKP-21 DONE** (tick 1 of the /loop). infra `57f53c7` (tsx watch, both launch paths) + Carlos's elevated restart. Verified over time: 2 probe edits live ≤~5s (pid lineage 45904→46460→48452), 4-cycle hold stable, 4 reloads zero crash-loops. Keystone landed — the board below is now live-verifiable.
 - 2026-07-02 ~12:55 — **CKP-01 DONE** (tick 2, Carlos-blessed). Relay speaks the client contract; 0 parse errors across 231s + two later 5-min windows. First fix to ride CKP-21's hot-reload (zero elevated hands). Process slip owned: commits landed on the lane via a wrong-repo branch; memory `git-ops-need-explicit-cd` banked.
 - 2026-07-02 ~12:55 — **CKP-02 verdict (Carlos): GO BIG** — option (b), a dedicated floors section rendering the building's boards. In flight.
