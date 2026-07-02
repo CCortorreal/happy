@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { View, TextInput, Pressable, ScrollView } from 'react-native';
+import { View, TextInput, Pressable, ScrollView, LayoutAnimation } from 'react-native';
 import { Text } from '@/components/StyledText';
 import { StyleSheet, useUnistyles } from 'react-native-unistyles';
 import { Typography } from '@/constants/Typography';
@@ -330,18 +330,24 @@ function NeedsYouPlane() {
     const openCount = needsYou.filter((i) => !overlay[i.id]).length;
 
     // Boring-when-healthy: nothing needs Carlos -> a thin quiet line, NEVER an empty
-    // labeled box. A dead feed with nothing to show is the one exception — LOUD.
+    // labeled box. A dead feed with nothing to show is the one exception — LOUD (styled
+    // louder via a destructive-tinted card, never softened toward calm).
     if (needsYou.length === 0) {
         if (unreachable) {
             return (
                 <View style={[styles.plane, { marginBottom: d.planeGap }]}>
-                    <FeedUnreachable message="can't reach the Warden — answers won't send" />
+                    <View style={[styles.unreachableCard, { borderRadius: d.cardRadius, paddingVertical: d.cardPaddingV, paddingHorizontal: d.cardPaddingH }]}>
+                        <FeedUnreachable message="can't reach the Warden — answers won't send" />
+                    </View>
                 </View>
             );
         }
         return (
             <View style={[styles.plane, { marginBottom: d.planeGap }]}>
-                <Text style={[styles.quietLine, { fontSize: scaled(13, d.typeScale) }]}>Nothing needs you right now</Text>
+                <View style={styles.quietLineRow}>
+                    <StatusDot color={GREY} size={6} />
+                    <Text style={[styles.quietLine, { fontSize: scaled(13, d.typeScale) }]}>Nothing needs you right now</Text>
+                </View>
             </View>
         );
     }
@@ -622,7 +628,13 @@ function LaneTile({ row, rosterUnreachable, selected, workers, laneIndex, depth 
                 </View>
                 <Pressable
                     hitSlop={8}
-                    onPress={() => setExpanded((v) => !v)}
+                    onPress={() => {
+                        // Cheap-but-classy expand/collapse — the codebase's established
+                        // pattern (see (app)/new/index.tsx's config-panel toggle) rather
+                        // than a new animation dependency.
+                        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                        setExpanded((v) => !v);
+                    }}
                     style={[styles.expandToggle, { minWidth: d.minTouchSize, minHeight: d.minTouchSize, alignItems: 'center', justifyContent: 'center' }]}
                 >
                     <Text style={[styles.expandChevron, { fontSize: scaled(14, d.typeScale) }]}>{effectiveExpanded ? '▴' : '▾'}</Text>
@@ -811,7 +823,10 @@ function TheWorkPlane({ selectedSessionId, mockRoster }: {
             return (
                 <View style={[styles.plane, { marginBottom: d.planeGap }]}>
                     <Text style={[styles.planeTitle, { fontSize: scaled(13, d.typeScale) }]}>THE WORK</Text>
-                    <Text style={[styles.quietLine, { fontSize: scaled(13, d.typeScale) }]}>No active lanes — the board is empty</Text>
+                    <View style={styles.quietLineRow}>
+                        <StatusDot color={GREY} size={6} />
+                        <Text style={[styles.quietLine, { fontSize: scaled(13, d.typeScale) }]}>No active lanes — the board is empty</Text>
+                    </View>
                 </View>
             );
         }
@@ -972,7 +987,10 @@ function VitalsStrip() {
                                 minWidth: scaled(140, dens.typeScale),
                             },
                         ]}
-                        onPress={() => setExpandedKey((k) => (k === d.key ? null : d.key))}
+                        onPress={() => {
+                            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                            setExpandedKey((k) => (k === d.key ? null : d.key));
+                        }}
                     >
                         <StatusDot color={d.color} size={8} />
                         <Text style={[styles.vitalLabel, { fontSize: scaled(11, dens.typeScale) }]}>{d.label}</Text>
@@ -1039,6 +1057,51 @@ function MockRosterToggle({ on, onChange }: { on: boolean; onChange: (v: boolean
     );
 }
 
+// ============================================================================
+// HEADER — considered identity for the unified command surface. Title +
+// live-seat-count + a status dot, no cheesy branding. The dot/count are
+// derived from the SAME roster feed + deriveLiveness verdict every lane tile
+// already uses (never a second, independent "is it healthy" computation) —
+// unreachable reads GREY-unverified (matches deriveLiveness's own
+// fail-closed default for an unreachable poll), a reachable roster with zero
+// live seats reads GREY-idle, and at least one 'alive' seat reads GREEN.
+// Boring-when-healthy, honest-null when the roster hasn't answered yet.
+// ============================================================================
+
+function CockpitHeader() {
+    const d = useDensity();
+    const { sessions, workers, unreachable } = useCongressRoster();
+
+    const { liveCount, totalCount } = React.useMemo(() => {
+        const seats = [...sessions.values(), ...workers];
+        let live = 0;
+        for (const seat of seats) {
+            if (deriveLiveness(seat, unreachable).online) live += 1;
+        }
+        return { liveCount: live, totalCount: seats.length };
+    }, [sessions, workers, unreachable]);
+
+    const dotColor = unreachable ? GREY : liveCount > 0 ? GREEN : GREY;
+    const statusLabel = unreachable
+        ? 'roster unreachable'
+        : totalCount === 0
+            ? 'no seats yet'
+            : `${liveCount} of ${totalCount} live`;
+
+    return (
+        <View style={styles.headerBlock}>
+            <View style={styles.headerTitleRow}>
+                <Text style={[styles.headerTitle, { fontSize: scaled(22, d.typeScale) }]}>Cockpit</Text>
+                <View style={styles.headerStatusChip}>
+                    <StatusDot color={dotColor} isPulsing={!unreachable && liveCount > 0} size={7} />
+                    <Text style={[styles.headerStatusText, { fontSize: scaled(12, d.typeScale) }]}>{statusLabel}</Text>
+                </View>
+            </View>
+            <Text style={[styles.headerSubtitle, { fontSize: scaled(12.5, d.typeScale) }]}>Carlos's unified command surface</Text>
+        </View>
+    );
+}
+
 // Named export of the main screen component — imported directly by the
 // landing route (sources/app/(app)/index.tsx), which is now the default
 // export there instead of this dev route. This file stays AT THIS PATH
@@ -1059,12 +1122,7 @@ export function CockpitV2Screen() {
             <ScrollView contentContainerStyle={styles.scroll}>
                 <View style={styles.container}>
                     <View style={styles.topBarRow}>
-                        {devModeEnabled ? (
-                            <View style={styles.devToolsRow}>
-                                <DensityPicker density={density} onChange={setDensity} />
-                                <MockRosterToggle on={mockOn} onChange={setMockOn} />
-                            </View>
-                        ) : <View />}
+                        <CockpitHeader />
                         <Pressable
                             hitSlop={8}
                             onPress={() => router.push('/sessions/index')}
@@ -1074,6 +1132,12 @@ export function CockpitV2Screen() {
                             <Ionicons name="list" size={18} color={theme.colors.textSecondary} />
                         </Pressable>
                     </View>
+                    {devModeEnabled ? (
+                        <View style={styles.devToolsRow}>
+                            <DensityPicker density={density} onChange={setDensity} />
+                            <MockRosterToggle on={mockOn} onChange={setMockOn} />
+                        </View>
+                    ) : null}
                     <NeedsYouPlane />
                     <TheWorkPlane mockRoster={mockOn ? MOCK_RECURSIVE_ROSTER : null} />
                     <VitalsStrip />
@@ -1101,20 +1165,57 @@ const styles = StyleSheet.create((theme) => ({
     },
     topBarRow: {
         flexDirection: 'row',
-        alignItems: 'center',
+        alignItems: 'flex-start',
         justifyContent: 'space-between',
         marginBottom: 4,
+    },
+    headerBlock: {
+        flex: 1,
+        minWidth: 0,
+    },
+    headerTitleRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+        flexWrap: 'wrap',
+    },
+    headerTitle: {
+        fontSize: 22,
+        color: theme.colors.text,
+        letterSpacing: -0.3,
+        ...Typography.default('semiBold'),
+    },
+    headerStatusChip: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingHorizontal: 8,
+        paddingVertical: 3,
+        borderRadius: 20,
+        backgroundColor: theme.colors.groupped.background,
+    },
+    headerStatusText: {
+        fontSize: 12,
+        color: theme.colors.textSecondary,
+        ...Typography.default('semiBold'),
+    },
+    headerSubtitle: {
+        fontSize: 12.5,
+        color: theme.colors.textSecondary,
+        marginTop: 2,
+        ...Typography.default(),
     },
     devToolsRow: {
         flexDirection: 'row',
         gap: 12,
-        marginBottom: 12,
+        marginTop: 14,
+        marginBottom: 4,
         alignItems: 'center',
         flexWrap: 'wrap',
     },
     sessionsLinkButton: {
         padding: 8,
-        marginBottom: 12,
+        marginLeft: 8,
     },
     densityPicker: {
         flexDirection: 'row',
@@ -1167,12 +1268,24 @@ const styles = StyleSheet.create((theme) => ({
         ...Typography.default(),
     },
     // Boring-when-healthy: a thin quiet line, never an empty labeled box.
+    quietLineRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        paddingVertical: 8,
+        paddingHorizontal: 4,
+    },
     quietLine: {
         fontSize: 13,
         color: theme.colors.textSecondary,
-        paddingVertical: 8,
-        paddingHorizontal: 4,
         ...Typography.default(),
+    },
+    // LOUD-but-considered: a dead feed gets a card, not a bare line — the destructive
+    // TOKEN border makes it unmissable without inventing a second alarm color.
+    unreachableCard: {
+        backgroundColor: theme.colors.surface,
+        borderLeftWidth: 3,
+        borderLeftColor: theme.colors.textDestructive,
     },
 
     // --- NEEDS-YOU cards (unchanged visual language from the prior card-state cut) ---
