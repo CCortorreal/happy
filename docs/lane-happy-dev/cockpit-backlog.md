@@ -100,10 +100,18 @@ A red toast shows "Failed to parse congress relay res…" with a climbing count 
 
 ## P1 — the dead half
 
-### CKP-04 · Vitals feeds never resolve (DISK/CTX/BKLG) · `bug` · Major · OPEN
+### CKP-04 · Vitals feeds never resolve (DISK/CTX/BKLG) · `bug` · Major · UI-DONE (feed-writers = infra)
 Over 190s, only VRAM ever showed a value; DISK/CTX/BKLG oscillated `—` ↔ `reading…` forever. "reading…" is a permanent resting state, not transient binding.
 - **Fix:** repair the three feeds, or mark them explicitly unavailable (not perpetual "reading…").
 - **Accept:** each vital shows a real value within 30s of load, or an explicit "unavailable" — observed over 3 min.
+> **UI-DONE 2026-07-02 `50bf430`** (on `noc/00-split`). **BKLG fixed for real** — the new
+> `/v1/backlog` route (lane-vitals) makes it a live gauge ("6 queued"). **DISK/CTX now honest**
+> — `deriveGaugeStatus` was mapping `unreachable && !hasData` → 'binding' ("reading…"), but
+> `useHonestFeed` only trips `unreachable` after ~3 failed polls, so that's confirmed-dead,
+> not settling. Now they read **"unavailable — can't read DISK/CTX"** (verified over 45s,
+> held, zero "reading…"). **Root cause of DISK/CTX = dead sentinel WRITERS** (disk-sentinel
+> ~3.6d stale, heartbeat-sentinel dead) — restarting those device-health cadence jobs is
+> **infra, out of cockpit scope**; the UI now tells that truth instead of lying "reading…".
 
 ### CKP-05 · Session chat loads backwards (top-anchored, full history, no virtualization) · `bug` · Major · OPEN
 Instrumented: on load `scrollTop` stays **0**; nodes grow **155 → 1054** and height **27k → 140k px** in 43s, still growing, never bottom-anchors. A chat should open at the newest message and page older history upward.
