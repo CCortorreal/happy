@@ -108,8 +108,28 @@ fold into the reframe (mostly Sonnet-lane, root-caused in final-form-plan §2):
    default and shows honest per-lane state; screenshot-verified.*
 2. **Slice 2 — fold in the trust-debt floor** (§5 G-gaps) so the reframe never lies/flashes. *Done-check: the
    liveness dot matches the honest feed; no reflow on poll (reserved heights); LOUD ≤15s on a killed feed.*
+   **✅ SHIPPED + DESK-DOGFOODED 2026-07-01** (Sonnet lane `918f4f1`, local-only). Lane found the shared primitives
+   (poll-timeout, deriveLiveness, reserved heights) were already fixed pre-cockpit-v2 and correctly reused, then
+   caught + fixed two fresh dev-route regressions: G10/G14 (an idle-but-connected lane hard-coded GREEN, same as
+   a working lane → GREY) and G17/G18 (VitalsStrip collapsed binding + dead into one blanket red, could false-
+   green pre-first-read → split BINDING-grey / DEAD-red / DEGRADED-amber / healthy-green). **Desk Chrome-verify:**
+   NEEDS-YOU quiet when healthy ✓; THE WORK leads with a LOUD honest line "congress roster unreachable — showing
+   last-known lanes" ✓; G11 shows "no seat role — not a congress lane" not a cwd fragment ✓; vitals dots honest —
+   VRAM green with real "5% used", DISK/CTX/BKLG grey "reading…" while binding, NOT false-green ✓. Flagged
+   out-of-lane: useVram/useDisk/useHeartbeat lack `hasContent` predicate so a later-permanently-dead feed never
+   re-trips LOUD — shared-hook policy call, spawned as separate task rather than absorbed into this slice.
 3. **Slice 3 — posture-adaptive density** (desktop dense / phone compact / Deck lean-back), same atoms. *Done-
    check: the same cockpit renders at three densities from one component set.*
+   **✅ SHIPPED + DESK-DOGFOODED 2026-07-01** (Sonnet lane atoms + desk-completed picker, commit `9122519` local
+   only). Lane wired Density + DENSITY_TOKENS + DensityContext + `useDensity()` threading through every atom
+   (avatar sizes, type scale via `scaled()`, card gaps, min-touch-size on the expand toggle, `autoExpandLanes`
+   per posture). Desk-added: a dev-only DensityPicker (segmented DESKTOP/DECK/PHONE chip row at the top of the
+   dev route) wrapping the tree in `<DensityContext.Provider>` so all three postures are dogfoodable in one
+   browser tab. **Lived-verify (Chrome, screenshot-diffed all three):** DESKTOP renders dense with the first
+   lane auto-expanded inline (spec §3 "terminals expandable inline"); DECK renders lean-back with larger avatars
+   + medium spacing + both lanes collapsed; PHONE renders compact with tight one-honest-line-per-lane layout.
+   **Capability-invariance confirmed:** the LOUD honest lines, VITALS strip, and NEEDS-YOU plane render
+   identically at every posture — no consequential gate is dropped on the phone. Typecheck clean.
 4. **Slice 4 — cut to live**, Carlos-gated, with a live demo (loom's staged cutover gate, finally surfaced).
 
 **Fable-swing (design taste):** the IA (this doc), the work-first render + thought-line copy, the fan-out
