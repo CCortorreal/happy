@@ -557,20 +557,24 @@ function LaneTile({ row, rosterUnreachable, selected, workers, laneIndex, depth 
     // with no seat just gets its subtitle (the best honest signal this data layer has).
     const workLine = thought?.text ?? session.subtitle ?? 'no work-object signal yet';
 
-    // Live output tail (VISION check 7): useLaneTail streams the SAME live message
-    // store the session chat screen reads — a real tail, not the oracle's
-    // lastAssistantText snapshot. Privacy gate is unchanged: a seat that isn't
-    // renderSafe stays gated with the exact same fail-closed treatment as before,
-    // regardless of what the tail hook returns.
-    const renderSafeGate = !seat || seat.renderSafe === true;
-    const { items: tailItems, isLoaded: tailLoaded } = useLaneTail(renderSafeGate ? session.id : null);
-
     // Desktop auto-expands this lane's tail inline (spec §3 "terminals expandable
     // inline" — dense multi-lane view); phone/deck stay collapsed to one honest
     // line until tapped. This is a DEFAULT only — `expanded` still toggles the
     // SAME state on every density, so a phone user can still tap to see the
     // tail; it's just off by default where screen space is scarcest.
     const effectiveExpanded = expanded || laneIndex < d.autoExpandLanes;
+
+    // Live output tail (VISION check 7): useLaneTail streams the SAME live message
+    // store the session chat screen reads — a real tail, not the oracle's
+    // lastAssistantText snapshot. Privacy gate is unchanged: a seat that isn't
+    // renderSafe stays gated with the exact same fail-closed treatment as before,
+    // regardless of what the tail hook returns. Gated on effectiveExpanded too —
+    // sessionId must stay null for a collapsed tile so useLaneTail's loader
+    // (sync.onSessionVisible) does NOT fire for every lane on the board just
+    // because it's rendered; it should fire only once a tile is actually expanded
+    // (fixes a lane-A verify defect: this used to fire unconditionally on mount).
+    const renderSafeGate = !seat || seat.renderSafe === true;
+    const { items: tailItems, isLoaded: tailLoaded } = useLaneTail(renderSafeGate && effectiveExpanded ? session.id : null);
 
     // Recursive-tier nesting styles: only apply when depth > 0 so the depth-0
     // (root) render is byte-identical to the pre-tree flat surface.
