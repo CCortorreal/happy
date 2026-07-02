@@ -20,8 +20,13 @@
 
 ## P0 — keystone + bug storm
 
-### CKP-21 · Dev server runs under watch so fixes go live · `infra` · Major · OPEN
+### CKP-21 · Dev server runs under watch so fixes go live · `infra` · Major · IN-PROGRESS
 **The keystone. Do this first — nothing below can be verified until it lands.**
+> **Status 2026-07-02:** fix landed in projects-infra `57f53c7` — both launch paths
+> (`workshop/happy-up.ps1` + staged `congress-console.mjs`) now start the server under
+> `tsx watch --clear-screen=false`. Awaiting the one-time elevated restart (Carlos's
+> hands: close the `happy-server :3005` window, re-run `happy-up.ps1`), then the
+> 2-edit hot-reload acceptance check.
 The `:3005` happy-server ran ~18h under `tsx` (no `--watch`) in an elevated console; every commit served stale code until a manual elevated restart. We got burned twice today.
 - **Fix:** run the dev server under `tsx watch` (or the warden/a supervisor) so lane commits hot-reload. If a one-time elevated restart is needed to bring the watch-mode server up, that's Carlos's hands.
 - **Accept:** make a trivial server edit, observe it live within ~5s with no manual restart. Confirmed over 2 edits.
