@@ -1,0 +1,155 @@
+# Cockpit dev-ops backlog
+
+> The ticket board for the cockpit convergence workstream. Source of truth for the
+> `/loop COCKPIT DEV-OPS` pedal. Findings come from the live-surface audit + the
+> over-time instrumented observation on 2026-07-02 (lane/happy-dev, localhost:8081).
+>
+> **Status legend:** `OPEN` · `IN-PROGRESS` · `PR` (awaiting Carlos merge) · `DONE`
+> **Every ticket's acceptance is verified OVER TIME** — instrument the live app,
+> watch multiple poll cycles, confirm the fix holds. Initial-load green is not done.
+
+## Ranking / sequence
+
+- **P0 — keystone + bug storm** (nothing else is verifiable until these land): CKP-21, CKP-01, CKP-02, CKP-03, CKP-08
+- **P1 — the dead half** (feeds + the detail surface a human actually lands in): CKP-04, CKP-05, CKP-06, CKP-07, CKP-22
+- **P2 — readability redesign** (make it a command surface, not a dev tool): CKP-09, CKP-10, CKP-11, CKP-12, CKP-13, CKP-17
+- **P3 — steerability** (grow the hands): CKP-18, CKP-19, CKP-20
+- **P4 — polish**: CKP-14, CKP-15, CKP-16
+
+---
+
+## P0 — keystone + bug storm
+
+### CKP-21 · Dev server runs under watch so fixes go live · `infra` · Major · OPEN
+**The keystone. Do this first — nothing below can be verified until it lands.**
+The `:3005` happy-server ran ~18h under `tsx` (no `--watch`) in an elevated console; every commit served stale code until a manual elevated restart. We got burned twice today.
+- **Fix:** run the dev server under `tsx watch` (or the warden/a supervisor) so lane commits hot-reload. If a one-time elevated restart is needed to bring the watch-mode server up, that's Carlos's hands.
+- **Accept:** make a trivial server edit, observe it live within ~5s with no manual restart. Confirmed over 2 edits.
+- **Dep:** blocks live verification of every server-side ticket (CKP-01/02/03/04/22).
+
+### CKP-01 · RELAY plane: schema mismatch · `bug` · Critical · OPEN
+Server sends `{ ts: ISO-string, from, to, kind, excerpt }`; client `CongressRelayItemSchema` requires an `id` (absent) and a **numeric** `ts` (gets a string). Parse rejected → "can't reach the relay log" + climbing error toast.
+- **Files:** `packages/happy-server/.../congressOpsRoutes.ts` (relay builder), `packages/happy-app/sources/sync/congressRelayTypes.ts`.
+- **Fix:** server already computes `epochMs` — send that as `ts`; add `id` (hash of ts+from+excerpt).
+- **Accept:** RELAY plane renders real entries; **0 relay parse errors over 3 min** of observation (currently ~12/min).
+
+### CKP-02 · KANBAN chips: wrong entity, not just wrong shape · `bug`/`decision` · Critical · OPEN
+Server keys counts by building **floor** (atlas, crew, spine…); cockpit lanes are congress **seats**. Even with shape fixed, floor-counts have no seat to attach to.
+- **Decision needed (Carlos):** (a) drop kanban chips from congress-seat lanes, or (b) add a separate "floors" section that renders the building's boards.
+- **Accept:** **0 kanban parse errors over 3 min**; chips render only where data legitimately maps.
+
+### CKP-03 · Live-count decays 9→0 and pins at zero · `bug` · Critical · OPEN
+On load the header reads "9 of 11 live"; within seconds it drains to **"0 of 11 live"** and holds flat there (500ms watcher: 12/12 reads `0/11`) while all 6 seats keep rendering. The reassuring headline number is a load-time artifact that expires.
+- **Likely root:** liveness is beat-age based; seats age past threshold between oracle refreshes, so the count drains instead of refreshing — or header count and settled count use different derivations.
+- **Fix:** trace the "N live" derivation + staleness window; reconcile with per-seat verdicts.
+- **Accept:** observed over **5 min**, the live count reflects true seat liveness and does not drain to 0 while seats are present.
+
+### CKP-08 · Raw parse errors surface as a user-facing toast · `bug` · Minor · OPEN
+A red toast shows "Failed to parse congress relay res…" with a climbing count (the cumulative parse-error counter, ~24/min). Developer exception strings on the human surface.
+- **Fix:** swallow parse failures to `console` only; the honest-state plane is the user-facing signal.
+- **Accept:** no dev-error toasts on the surface over 3 min. (CKP-01/02 remove the source; this removes the leak.)
+
+---
+
+## P1 — the dead half
+
+### CKP-04 · Vitals feeds never resolve (DISK/CTX/BKLG) · `bug` · Major · OPEN
+Over 190s, only VRAM ever showed a value; DISK/CTX/BKLG oscillated `—` ↔ `reading…` forever. "reading…" is a permanent resting state, not transient binding.
+- **Fix:** repair the three feeds, or mark them explicitly unavailable (not perpetual "reading…").
+- **Accept:** each vital shows a real value within 30s of load, or an explicit "unavailable" — observed over 3 min.
+
+### CKP-05 · Session chat loads backwards (top-anchored, full history, no virtualization) · `bug` · Major · OPEN
+Instrumented: on load `scrollTop` stays **0**; nodes grow **155 → 1054** and height **27k → 140k px** in 43s, still growing, never bottom-anchors. A chat should open at the newest message and page older history upward.
+- **Fix:** bottom-anchor on newest; lazy-page older upward; virtualize so load doesn't scale with session length.
+- **Accept:** on load the chat rests at the newest message; scrollHeight stabilizes < 3s; no unbounded top-down growth — observed over time on a 1000+ message session.
+
+### CKP-06 · `/sessions/index` is a dead route (cutover escape hatch 404s) · `bug` · Major · OPEN
+Navigating to `/sessions/index` → "Unmatched Route, page could not be found." This is the route the hamburger's "Classic session list" links to and the daily-driver cutover (VISION check 8) promised.
+- **Fix:** register the classic-list route correctly (Expo Router file placement).
+- **Accept:** hamburger → classic list renders; `/sessions/index` resolves, not 404.
+
+### CKP-07 · "Classic session list" icon is a blank glyph → dead route · `bug` · Minor · OPEN
+Icon-only button, ionicons private-use codepoint renders as blank/tofu, and it leads to the CKP-06 dead page. Double-broken.
+- **Fix:** correct glyph + a visible label; wire to the fixed route.
+- **Accept:** button shows a real icon + label and navigates to a live list.
+
+### CKP-22 · Oracle emits 2 anonymous `seat:null` rows · `infra` · Minor · OPEN
+seats-oracle publishes 2 rows with `seat:null`; the server row-salvage drops them, so 2 live sessions are invisible and the "11" count is untrustworthy.
+- **Fix (upstream, peer-channel):** name-or-drop the null rows at the source.
+- **Accept:** roster count matches real seats; no silent-dropped rows. Related: CKP-03, CKP-13.
+
+---
+
+## P2 — readability redesign
+
+### CKP-09 · Desktop wastes ~60% of screen (phone-width column in a void) · `design` · Critical · OPEN
+One ~640px column pinned left; the rest is empty. Phone posture is nearly identical — density changes row tightness, not layout.
+- **Fix:** desktop earns its width — multi-column NOC (lanes grid + persistent VITALS/RELAY right rail + wide tail pane). Phone stays single-column.
+- **Accept:** on a desktop viewport, content uses the width; lived-verified across a resize.
+
+### CKP-10 · Sovereignty boundary is invisible · `design` · Critical · OPEN
+Caged seats (`cage-mvf:*`) render identically to host seats. The product's whole thesis — sealed vs open — has no visual language.
+- **Fix:** caged seats read as contained at a glance (sealed frame/tint/lock, grouped under `cage-root`); host seats read as open.
+- **Accept:** a first-time viewer can point to "which seats are sealed" without reading labels.
+
+### CKP-11 · Recursive tree barely reads as a tree · `design` · Major · OPEN
+penthouse→floor-god→worker nests with ~16px indent, no connective structure.
+- **Fix:** stronger indentation + connective rails or explicit enclosure grouping.
+- **Accept:** depth/parentage is unambiguous at a glance.
+
+### CKP-12 · Real seats have no identity avatars · `design` · Major · OPEN
+Live seats render as generic grey squares; only the mock roster has colored avatars — the design exists, live data doesn't populate it.
+- **Fix:** deterministic per-seat identity color/glyph seeded from seat id, shaped by role.
+- **Accept:** seats are visually distinguishable without reading labels.
+
+### CKP-13 · "N live" gives no way to see the dark seats · `design` · Major · OPEN
+The count implies missing seats with no drill-in.
+- **Fix:** list dark seats greyed with last-seen.
+- **Accept:** "what's not running" is answerable from the surface. Related: CKP-03, CKP-22.
+
+### CKP-17 · Session detail has "no character" (ungroomed classic view) · `design` · Major · OPEN
+The session you land in from a lane is the unmodified classic Happy chat — none of the cockpit's identity, honest-state language, or density reaches it.
+- **Fix:** groom the session detail surface to match the cockpit (after CKP-05 fixes its load).
+- **Accept:** the detail view reads as part of the cockpit, not a different app.
+
+---
+
+## P3 — steerability (grow the hands)
+
+### CKP-18 · Steer is buried; promote to an operator pane · `feat` · Critical · OPEN
+Steer only appears inside an expanded lane as a thin line; halt is a weightless text button.
+- **Fix:** selecting a lane opens an operator pane — steer as the main event (full-width input, clear send, tail directly above so you see the effect).
+- **Accept:** steering a lane is a first-class action reachable in one interaction; over-time verify a steer round-trip lands in the tail.
+
+### CKP-19 · Wire the operator rail — PA broadcast + floor boot/down UI · `feat` · Major · OPEN
+PA broadcast and floor boot/down shipped as endpoints (audited, two-step, penthouse-protected) with **no human surface** — curl-only.
+- **Fix:** an operator rail mirroring the building's control room: PA compose + per-floor boot/down with the arm→dry-run→confirm flow.
+- **Accept:** a human can broadcast + boot/down from the cockpit; two-step confirm enforced in UI; penthouse never a down target; over-time verify a dry-run round-trip.
+
+### CKP-20 · Halt affordance is too weak for a destructive action · `feat` · Minor · OPEN
+Halt looks like a link next to steer.
+- **Fix:** unmistakably destructive (red, guarded), visible two-step arm→confirm.
+- **Accept:** halt cannot fire on a single tap; reads as dangerous.
+
+---
+
+## P4 — polish
+
+### CKP-14 · Dev toggles leak into the production landing · `design` · Minor · OPEN
+DESKTOP/DECK/PHONE/MOCK RECURSIVE ROSTER sit as primary tabs; "Mock roster" is a dev switch presented as a feature.
+- **Fix:** auto-detect posture; gate the mock toggle behind `__DEV__`.
+- **Accept:** a daily-driver never sees "mock"; posture adapts to viewport/input.
+
+### CKP-15 · VITALS are text dots, not gauges · `design` · Minor · OPEN
+- **Fix:** small bars/sparklines with an emphasized current value.
+- **Accept:** vitals read peripherally at a glance. Related: CKP-04.
+
+### CKP-16 · Density postures are shallow (desktop ≈ phone) · `design` · Minor · OPEN
+- **Fix:** desktop is a genuinely different layout, not a re-densified column.
+- **Accept:** desktop and phone are distinct layouts, not the same column at two tightnesses. Related: CKP-09.
+
+---
+
+## Ledger (append per PR merge)
+
+- 2026-07-02 — Board created from the live audit + over-time instrumented observation. 22 tickets. Keystone = CKP-21 (server under watch). Nothing merged yet.
