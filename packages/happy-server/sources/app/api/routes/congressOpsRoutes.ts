@@ -210,6 +210,18 @@ function toEpochMs(ts: string | number | null | undefined): number | null {
     return Number.isFinite(parsed) ? parsed : null;
 }
 
+// Stable content-derived item id (CKP-01): the client schema requires one (it is
+// the RELAY plane's React key) and the log lines carry none. djb2 over the fields
+// that make an entry "the same entry" — identical content at the same instant
+// hashes identically on every poll, so keys are stable across refetches and the
+// merge-dedupe can key on it.
+function relayItemId(epochMs: number, from: string, to: string, excerpt: string): string {
+    const s = `${epochMs}|${from}|${to}|${excerpt}`;
+    let h = 5381;
+    for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
+    return `r${epochMs.toString(36)}-${h.toString(36)}`;
+}
+
 // Tail-read log.jsonl (bounded — never slurp an unbounded log into memory).
 const RELAY_TAIL_BYTES = 2 * 1024 * 1024;
 
@@ -590,8 +602,12 @@ export function congressOpsRoutes(app: Fastify) {
     // GET /v1/congress/relay?limit=N — last N inter-seat relay-log entries,
     // newest LAST. Two read-only sources merged: the peer-channel traffic log
     // (state/log.jsonl) and the membrane's processed-message archive
-    // (state/messages/log/*.md). `sources` reports which actually fed the
-    // response, so an empty list is distinguishable from an unreadable log.
+    // (state/messages/log/*.md). Wire shape mirrors the client's
+    // CongressRelayResponseSchema (congressRelayTypes.ts): { ts, stale, items }
+    // with numeric epoch-ms timestamps and a stable per-item id (CKP-01 — the
+    // old { entries, sources } envelope with ISO ts failed every client parse).
+    // `kind` + `sources` ride along as extra keys (client zod strips them);
+    // `sources` keeps an empty list distinguishable from an unreadable log.
     app.get('/v1/congress/relay', {
         schema: {
             querystring: z.object({
@@ -599,8 +615,11 @@ export function congressOpsRoutes(app: Fastify) {
             }),
             response: {
                 200: z.object({
-                    entries: z.array(z.object({
-                        ts: z.string(),
+                    ts: z.number().nullable(),
+                    stale: z.boolean(),
+                    items: z.array(z.object({
+                        id: z.string(),
+                        ts: z.number(),
                         from: z.string(),
                         to: z.string(),
                         kind: z.string(),
@@ -618,12 +637,21 @@ export function congressOpsRoutes(app: Fastify) {
         const { limit } = request.query;
         const jsonl = readRelayJsonl();
         const membrane = readMembraneLog();
-        const merged = [...jsonl.entries, ...membrane.entries]
-            .sort((a, b) => a.epochMs - b.epochMs)
-            .slice(-limit)
-            .map(({ ts, from, to, kind, excerpt }) => ({ ts, from, to, kind, excerpt }));
+        const seen = new Set<string>();
+        const items: Array<{ id: string; ts: number; from: string; to: string; kind: string; excerpt: string }> = [];
+        // Dedupe by content id AFTER the merge — the same message can appear in
+        // both sources (e.g. a PA lands in log.jsonl AND the membrane archive).
+        for (const e of [...jsonl.entries, ...membrane.entries].sort((a, b) => a.epochMs - b.epochMs)) {
+            const id = relayItemId(e.epochMs, e.from, e.to, e.excerpt);
+            if (seen.has(id)) continue;
+            seen.add(id);
+            items.push({ id, ts: e.epochMs, from: e.from, to: e.to, kind: e.kind, excerpt: e.excerpt });
+        }
+        const sliced = items.slice(-limit);
         return reply.send({
-            entries: merged,
+            ts: sliced.length > 0 ? sliced[sliced.length - 1].ts : null,
+            stale: !jsonl.available && !membrane.available,
+            items: sliced,
             sources: { logJsonl: jsonl.available, membraneLog: membrane.available },
         });
     });
