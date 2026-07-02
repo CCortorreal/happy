@@ -20,13 +20,19 @@
 
 ## P0 — keystone + bug storm
 
-### CKP-21 · Dev server runs under watch so fixes go live · `infra` · Major · IN-PROGRESS
+### CKP-21 · Dev server runs under watch so fixes go live · `infra` · Major · DONE
 **The keystone. Do this first — nothing below can be verified until it lands.**
-> **Status 2026-07-02:** fix landed in projects-infra `57f53c7` — both launch paths
-> (`workshop/happy-up.ps1` + staged `congress-console.mjs`) now start the server under
-> `tsx watch --clear-screen=false`. Awaiting the one-time elevated restart (Carlos's
-> hands: close the `happy-server :3005` window, re-run `happy-up.ps1`), then the
-> 2-edit hot-reload acceptance check.
+> **DONE 2026-07-02 ~12:08.** Fix: projects-infra `57f53c7` — both launch paths
+> (`workshop/happy-up.ps1` + staged `congress-console.mjs`) start the server under
+> `tsx watch --clear-screen=false` (+ chip session added the missing `.env.selfhost`
+> layer to the console path). Carlos executed the elevated restart (old pid 42812
+> survived a window-close — it was orphaned from this morning's non-happy-up restart;
+> killed via `taskkill /F /T` from the elevated prompt).
+> **Acceptance evidence (over time):** edit #1 (banner marker) live on first poll,
+> pid 45904→46460; edit #2 (revert) live **+4.3s** from file write, pid→48452;
+> hold: 4 cycles × 12s, pid 48452 stable, root 200 throughout; EOL-restore reload
+> → pid 36668 healthy. 4 reloads total, zero crash-loops, PGlite re-opened cleanly
+> every time. Server-side tickets are now live-verifiable.
 The `:3005` happy-server ran ~18h under `tsx` (no `--watch`) in an elevated console; every commit served stale code until a manual elevated restart. We got burned twice today.
 - **Fix:** run the dev server under `tsx watch` (or the warden/a supervisor) so lane commits hot-reload. If a one-time elevated restart is needed to bring the watch-mode server up, that's Carlos's hands.
 - **Accept:** make a trivial server edit, observe it live within ~5s with no manual restart. Confirmed over 2 edits.
@@ -158,3 +164,4 @@ DESKTOP/DECK/PHONE/MOCK RECURSIVE ROSTER sit as primary tabs; "Mock roster" is a
 ## Ledger (append per PR merge)
 
 - 2026-07-02 — Board created from the live audit + over-time instrumented observation. 22 tickets. Keystone = CKP-21 (server under watch). Nothing merged yet.
+- 2026-07-02 ~12:08 — **CKP-21 DONE** (tick 1 of the /loop). infra `57f53c7` (tsx watch, both launch paths) + Carlos's elevated restart. Verified over time: 2 probe edits live ≤~5s (pid lineage 45904→46460→48452), 4-cycle hold stable, 4 reloads zero crash-loops. Keystone landed — the board below is now live-verifiable.
