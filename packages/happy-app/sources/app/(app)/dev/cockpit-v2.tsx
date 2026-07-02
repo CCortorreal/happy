@@ -5,17 +5,17 @@ import { layout } from '@/components/layout';
 import { useLocalSetting } from '@/sync/storage';
 import { MOCK_RECURSIVE_ROSTER } from '@/hooks/useCongressTree';
 import { usePosture } from '@/hooks/usePosture';
-import { type Density, DensityContext } from './cockpit/density';
-import { CockpitSelectionContext, type CockpitSelection } from './cockpit/selection';
-import { NeedsYouPlane } from './cockpit/planes/NeedsYouPlane';
-import { TheWorkPlane } from './cockpit/planes/TheWorkPlane';
-import { VitalsStrip } from './cockpit/planes/VitalsStrip';
-import { FloorsPlane } from './cockpit/planes/FloorsPlane';
-import { RelayPlane } from './cockpit/planes/RelayPlane';
-import { CockpitHeader } from './cockpit/components/header';
-import { SessionsLink } from './cockpit/components/SessionsLink';
-import { NocGrid } from './cockpit/NocGrid';
-import { DensityPicker, MockRosterToggle } from './cockpit/mock/mockRoster';
+import { type Density, DensityContext } from '@/cockpit/density';
+import { CockpitSelectionContext, type CockpitSelection } from '@/cockpit/selection';
+import { NeedsYouPlane } from '@/cockpit/planes/NeedsYouPlane';
+import { TheWorkPlane } from '@/cockpit/planes/TheWorkPlane';
+import { VitalsStrip } from '@/cockpit/planes/VitalsStrip';
+import { FloorsPlane } from '@/cockpit/planes/FloorsPlane';
+import { RelayPlane } from '@/cockpit/planes/RelayPlane';
+import { CockpitHeader } from '@/cockpit/components/header';
+import { SessionsLink } from '@/cockpit/components/SessionsLink';
+import { NocGrid } from '@/cockpit/NocGrid';
+import { DensityPicker, MockRosterToggle } from '@/cockpit/mock/mockRoster';
 
 // Cockpit v2 — the WORK-FIRST reframe (July-7 spec, §6.1 Slice 1). DEV ROUTE, not
 // wired into Carlos's live surface (SessionsList.tsx stays untouched). Same for-carlos
@@ -42,7 +42,7 @@ import { DensityPicker, MockRosterToggle } from './cockpit/mock/mockRoster';
 
 // Preserve this file's public type surface — `Density` was exported from here
 // before the split (kept for parity; also re-exported for the split guard).
-export type { Density } from './cockpit/density';
+export type { Density } from '@/cockpit/density';
 
 // ============================================================================
 // SHELL — resolves posture, owns the selection + density providers, and picks

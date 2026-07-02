@@ -12,15 +12,9 @@ import { useRouter } from 'expo-router';
 //   Verified at runtime: matchers.js strips `/index`, so `sessions/index.tsx`
 //   resolves to `/sessions`; pushing `/sessions/index` on web → Unmatched Route.
 //   `/sessions` IS a real registered route (sources/app/(app)/sessions/index.tsx
-//   + _layout name="sessions/index").
-// - The `as never` cast is a KNOWN-ISSUE bridge, NOT a mask: expo-router's
-//   generated typed-route union (.expo/types/router.d.ts) is polluted because the
-//   cockpit component modules currently live UNDER sources/app/ (the router root),
-//   so every module registers as a phantom route and crowds `/sessions` out of the
-//   union. The runtime target is correct; only the generated types are wrong.
-//   TRACKED FOLLOW-UP (CKP-23): relocate sources/app/(app)/dev/cockpit/ →
-//   sources/cockpit/ (needs a Metro restart), which regenerates a clean union and
-//   lets this cast be removed. See the cockpit-devops thread.
+//   + _layout name="sessions/index") and is a clean typed href — the cockpit
+//   modules now live OUTSIDE the router root (sources/cockpit/, CKP-23 done), so
+//   the generated route union is no longer polluted and no cast is needed.
 // - visible "Sessions" label so the path stays discoverable even if the icon
 //   font ever fails to load again (dev surface — i18n-exempt by convention).
 
@@ -30,8 +24,7 @@ export const SessionsLink = React.memo(function SessionsLink() {
     return (
         <Pressable
             hitSlop={8}
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- see CKP-23 note above
-            onPress={() => router.push('/sessions' as never)}
+            onPress={() => router.push('/sessions')}
             style={styles.button}
             accessibilityRole="button"
             accessibilityLabel="Classic session list"

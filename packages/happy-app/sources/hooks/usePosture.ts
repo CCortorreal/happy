@@ -1,5 +1,5 @@
 import { useWindowDimensions } from 'react-native';
-import { type Density } from '@/app/(app)/dev/cockpit/density';
+import { type Density } from '@/cockpit/density';
 
 // ============================================================================
 // usePosture — resolves the AUTO-detected cockpit posture from window width.
