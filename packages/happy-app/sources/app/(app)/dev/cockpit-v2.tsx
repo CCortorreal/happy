@@ -19,6 +19,7 @@ import { useNavigateToSession } from '@/hooks/useNavigateToSession';
 import { useLaneTail } from '@/hooks/useLaneTail';
 import { CongressSeat } from '@/sync/congressTypes';
 import { SessionRowData } from '@/sync/storage';
+import { useLocalSetting } from '@/sync/storage';
 import { deriveLiveness } from '@/sync/liveness';
 import { congressIdentity } from '@/utils/congressIdentity';
 import { congressHealthStatus, voiceThought, contextPressure } from '@/components/SessionsList';
@@ -30,6 +31,8 @@ import { VramGauge } from '@/components/VramGauge';
 import { DiskGauge } from '@/components/DiskGauge';
 import { ContextGauge } from '@/components/ContextGauge';
 import { BacklogGauge } from '@/components/BacklogGauge';
+import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 
 // Cockpit v2 — the WORK-FIRST reframe (July-7 spec, §6.1 Slice 1). DEV ROUTE, not
 // wired into Carlos's live surface (SessionsList.tsx stays untouched). Same for-carlos
@@ -1036,16 +1039,40 @@ function MockRosterToggle({ on, onChange }: { on: boolean; onChange: (v: boolean
     );
 }
 
-export default function CockpitV2() {
+// Named export of the main screen component — imported directly by the
+// landing route (sources/app/(app)/index.tsx), which is now the default
+// export there instead of this dev route. This file stays AT THIS PATH
+// (external machine check greps it) and keeps working standalone as
+// dev/cockpit-v2 too (below), just rendering the same component.
+export function CockpitV2Screen() {
     const [density, setDensity] = React.useState<Density>('desktop');
     const [mockOn, setMockOn] = React.useState(false);
+    const router = useRouter();
+    const { theme } = useUnistyles();
+    // Dev-only affordances (density picker, mock-roster toggle) stay reachable
+    // for dogfooding but never show on the production landing surface by
+    // default — gated behind the same __DEV__ || devModeEnabled pattern used
+    // across the app (see SettingsView.tsx, voice.tsx, ToolFullView.tsx).
+    const devModeEnabled = __DEV__ || useLocalSetting('devModeEnabled');
     return (
         <DensityContext.Provider value={density}>
             <ScrollView contentContainerStyle={styles.scroll}>
                 <View style={styles.container}>
-                    <View style={styles.devToolsRow}>
-                        <DensityPicker density={density} onChange={setDensity} />
-                        <MockRosterToggle on={mockOn} onChange={setMockOn} />
+                    <View style={styles.topBarRow}>
+                        {devModeEnabled ? (
+                            <View style={styles.devToolsRow}>
+                                <DensityPicker density={density} onChange={setDensity} />
+                                <MockRosterToggle on={mockOn} onChange={setMockOn} />
+                            </View>
+                        ) : <View />}
+                        <Pressable
+                            hitSlop={8}
+                            onPress={() => router.push('/sessions/index')}
+                            style={styles.sessionsLinkButton}
+                            accessibilityLabel="Classic session list"
+                        >
+                            <Ionicons name="list" size={18} color={theme.colors.textSecondary} />
+                        </Pressable>
                     </View>
                     <NeedsYouPlane />
                     <TheWorkPlane mockRoster={mockOn ? MOCK_RECURSIVE_ROSTER : null} />
@@ -1054,6 +1081,11 @@ export default function CockpitV2() {
             </ScrollView>
         </DensityContext.Provider>
     );
+}
+
+// dev/cockpit-v2 route itself keeps working — renders the same component.
+export default function CockpitV2() {
+    return <CockpitV2Screen />;
 }
 
 const styles = StyleSheet.create((theme) => ({
@@ -1067,12 +1099,22 @@ const styles = StyleSheet.create((theme) => ({
         paddingHorizontal: 16,
         paddingTop: 16,
     },
+    topBarRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 4,
+    },
     devToolsRow: {
         flexDirection: 'row',
         gap: 12,
         marginBottom: 12,
         alignItems: 'center',
         flexWrap: 'wrap',
+    },
+    sessionsLinkButton: {
+        padding: 8,
+        marginBottom: 12,
     },
     densityPicker: {
         flexDirection: 'row',

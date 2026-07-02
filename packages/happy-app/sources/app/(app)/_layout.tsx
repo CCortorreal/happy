@@ -54,6 +54,14 @@ export default function RootLayout() {
                 }}
             />
             <Stack.Screen
+                name="sessions/index"
+                options={{
+                    headerShown: true,
+                    headerTitle: 'Sessions',
+                    headerBackTitle: t('common.home')
+                }}
+            />
+            <Stack.Screen
                 name="settings/index"
                 options={{
                     headerShown: true,

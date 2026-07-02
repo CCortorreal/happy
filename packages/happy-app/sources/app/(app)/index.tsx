@@ -12,10 +12,16 @@ import { useIsLandscape } from "@/utils/responsive";
 import { Typography } from "@/constants/Typography";
 import { trackAccountCreated, trackAccountRestored } from '@/track';
 import { HomeHeaderNotAuth } from "@/components/HomeHeader";
-import { MainView } from "@/components/MainView";
 import { t } from '@/text';
+import CockpitScreen from "./dev/cockpit-v2";
 
-export default function Home() {
+// The cockpit (dev/cockpit-v2.tsx) is now the DEFAULT landing surface — the
+// daily driver, not a dev-only route (VISION check 8, code half). Auth gate
+// preserved exactly as before: unauthenticated -> NotAuthenticated, same
+// component/behavior. The classic session list survives at its own route,
+// /sessions (sources/app/(app)/sessions/index.tsx), reachable via a small
+// affordance inside the cockpit surface rather than duplicated here.
+export default function CockpitV2() {
     const auth = useAuth();
     if (!auth.isAuthenticated) {
         return <NotAuthenticated />;
@@ -26,7 +32,7 @@ export default function Home() {
 }
 
 function Authenticated() {
-    return <MainView variant="phone" />;
+    return <CockpitScreen />;
 }
 
 function NotAuthenticated() {
