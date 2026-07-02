@@ -47,6 +47,12 @@ export interface DensityTokens {
     // dot (a "footer row"); phone collapses to dot + label only, tap still
     // expands the same full gauge underneath — same data, less text.
     vitalsShowSummary: boolean;
+    // TREE RAILS (contract C2, consumed by lane-identity's TreeGutter): the
+    // horizontal step per proven-parent depth level for the hand-rolled
+    // connector rails/elbows that replace the flat 28px indent. Desktop/deck
+    // have room for a full step; phone tightens it so deep trees still fit the
+    // narrow column.
+    railStep: number;
 }
 
 const DENSITY_TOKENS: Record<Density, DensityTokens> = {
@@ -65,6 +71,7 @@ const DENSITY_TOKENS: Record<Density, DensityTokens> = {
         laneAvatarSize: 40,
         workerAvatarSize: 26,
         vitalsShowSummary: true,
+        railStep: 20,
     },
     deck: {
         // Lean-back: between desktop and phone. Bigger touch targets
@@ -81,6 +88,7 @@ const DENSITY_TOKENS: Record<Density, DensityTokens> = {
         laneAvatarSize: 48,
         workerAvatarSize: 32,
         vitalsShowSummary: true,
+        railStep: 20,
     },
     phone: {
         // Compact: one honest line per lane, tap to expand. Vitals collapse to
@@ -97,6 +105,7 @@ const DENSITY_TOKENS: Record<Density, DensityTokens> = {
         laneAvatarSize: 34,
         workerAvatarSize: 22,
         vitalsShowSummary: false,
+        railStep: 16,
     },
 };
 

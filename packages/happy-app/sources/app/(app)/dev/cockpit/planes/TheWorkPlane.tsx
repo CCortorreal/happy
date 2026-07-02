@@ -1,8 +1,9 @@
 import * as React from 'react';
-import { View } from 'react-native';
+import { View, Pressable, LayoutAnimation } from 'react-native';
 import { Text } from '@/components/StyledText';
 import { StyleSheet } from 'react-native-unistyles';
 import { Typography } from '@/constants/Typography';
+import { Avatar } from '@/components/Avatar';
 import { StatusDot } from '@/components/StatusDot';
 import { useVisibleSessionListViewData } from '@/hooks/useVisibleSessionListViewData';
 import { useCongressRoster } from '@/hooks/useCongressRoster';
@@ -11,8 +12,11 @@ import { CongressSeat } from '@/sync/congressTypes';
 import { SessionRowData } from '@/sync/storage';
 import { deriveLiveness } from '@/sync/liveness';
 import { LaneTile, type LaneRow } from '../components/LaneTile';
+import { TreeGutter } from '../components/TreeGutter';
+import { CageGroup } from '../components/CageGroup';
 import { WorkerAvatar, WORKER_AVATAR_SHOWN } from '../components/WorkerFanout';
-import { GREY } from '../colors';
+import { CockpitSelectionContext } from '../selection';
+import { GREY, isDimmed } from '../colors';
 import { useDensity, scaled } from '../density';
 
 // ============================================================================
@@ -111,18 +115,40 @@ function synthesizeSessionRowFromSeat(seat: CongressSeat): SessionRowData {
     };
 }
 
-export function TheWorkPlane({ selectedSessionId, mockRoster }: {
+export function TheWorkPlane({ selectedSessionId, mockRoster, boardMode = false }: {
     selectedSessionId?: string;
     // DEV-ONLY: when non-null, TheWorkPlane consumes the tree hydrated from
     // this fixture instead of the live congress roster. Wired to the "Mock
     // recursive roster" toggle at the top of CockpitV2. Never non-null on the
     // live surface (dev route only).
     mockRoster?: CongressSeat[] | null;
+    // CKP-09/16 desktop BOARD column: when true every tile renders collapsed-
+    // only (no chevron, no inline tail, no inline LaneHands; autoExpandLanes
+    // ignored), tile press SELECTS into the operator pane instead of
+    // expanding/navigating, and the selected tile gets a left accent bar.
+    // Default false preserves today's deck/phone inline-expand behavior exactly.
+    boardMode?: boolean;
 }) {
     const d = useDensity();
     const data = useVisibleSessionListViewData();
     const { sessions: roster, workers, unreachable: rosterUnreachable } = useCongressRoster();
     const tree = useCongressTree(mockRoster ?? null);
+    const selection = React.useContext(CockpitSelectionContext);
+
+    // CKP-11 collapse state — a local Set of collapsed seat ids. A parent tile
+    // shows a `▾ N` chip; collapsing hides its subtree and shows a stacked
+    // children-avatar preview next to the chip (graft 10). Local-only (view
+    // state, not roster truth) so it never leaks into liveness/selection.
+    const [collapsed, setCollapsed] = React.useState<Set<string>>(() => new Set());
+    const toggleCollapse = React.useCallback((seatId: string) => {
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        setCollapsed((prev) => {
+            const next = new Set(prev);
+            if (next.has(seatId)) next.delete(seatId);
+            else next.add(seatId);
+            return next;
+        });
+    }, []);
 
     // Flatten the view-model to a plain lane list — THE WORK is the living center,
     // not a list buried under a gauge, so Slice 1 renders every lane as an equal tile
@@ -158,38 +184,215 @@ export function TheWorkPlane({ selectedSessionId, mockRoster }: {
         return m;
     }, [lanes]);
 
-    // Recursive-tier render (2026-07-02, caged ai-ops design, vision check #6
-    // sub-check 3). Walks the tree depth-first, emitting a LaneTile per node
-    // with `depth` threaded through so the tile can indent + apply the nested
-    // left-border. Empty roster surfaces the same quiet "no lanes" line the
-    // flat renderer used — no fake board.
-    const renderTreeNode = (node: CongressTreeNode, laneIndex: { i: number }, out: React.ReactElement[]): void => {
-        const liveRow = sessionBySeatId.get(node.seat.seat);
-        const row: LaneRow = liveRow ?? {
+    // The effective selected session id: an explicit board selection wins over
+    // the (legacy) prop, so board tiles light in sync with the operator pane.
+    const effectiveSelectedId = selection.selectedSessionId ?? selectedSessionId;
+
+    const rowFor = (node: CongressTreeNode): LaneRow => (
+        sessionBySeatId.get(node.seat.seat) ?? {
             session: synthesizeSessionRowFromSeat(node.seat),
             seat: node.seat,
-        };
+        }
+    );
+
+    // Render one tile — the [TreeGutter, LaneTile] row plus (for a parent) the
+    // collapse chip / collapsed-children preview. `localDepth` is the depth
+    // used for the gutter rails: it restarts at 0 inside a cage frame so rails
+    // never cross the teal border (CKP-11 invariant).
+    const renderTile = (
+        node: CongressTreeNode,
+        localDepth: number,
+        ancestorsContinue: boolean[],
+        isLast: boolean,
+        laneIndex: { i: number },
+        out: React.ReactElement[],
+    ): void => {
+        const liveRow = sessionBySeatId.get(node.seat.seat);
+        const row = rowFor(node);
+        const isParent = node.children.length > 0;
+        const isCollapsed = collapsed.has(node.seat.seat);
+
         out.push(
-            <LaneTile
-                key={`tree:${node.seat.seat}`}
-                row={row}
-                rosterUnreachable={rosterUnreachable}
-                selected={row.session.id === selectedSessionId}
-                // Tree-mode workers are already CHILDREN in the tree — the
-                // host+pedal fan-out is skipped for tree nodes (children are
-                // rendered as their own LaneTiles below). Fall back to the
-                // flat-mode fan-out ONLY for depth-0 roots that DO have a
-                // live session row and no tree children — the closest thing
-                // to the pre-tree render.
-                workers={node.children.length === 0 && liveRow ? (workersByLane.get(liveRow.session.id) ?? []) : []}
-                laneIndex={laneIndex.i}
-                depth={node.depth}
-            />,
+            <View key={`row:${node.seat.seat}`} style={styles.treeRow}>
+                <TreeGutter depth={localDepth} ancestorsContinue={ancestorsContinue} isLast={isLast} />
+                <View style={styles.treeTileCell}>
+                    <LaneTile
+                        row={row}
+                        rosterUnreachable={rosterUnreachable}
+                        selected={row.session.id === effectiveSelectedId}
+                        // Tree-mode workers are already CHILDREN in the tree — the
+                        // host+pedal fan-out is skipped for tree nodes. Fall back to
+                        // the flat-mode fan-out ONLY for depth-0 roots with a live
+                        // session row and no tree children.
+                        workers={!isParent && liveRow ? (workersByLane.get(liveRow.session.id) ?? []) : []}
+                        laneIndex={laneIndex.i}
+                        depth={node.depth}
+                        isParent={isParent}
+                        boardMode={boardMode}
+                        onSelect={() => selection.select(row.session.id, node.seat.seat)}
+                    />
+                    {isParent ? (
+                        <View style={styles.collapseRow}>
+                            <Pressable hitSlop={8} onPress={() => toggleCollapse(node.seat.seat)} style={styles.collapseChip}>
+                                <Text style={[styles.collapseChipText, { fontSize: scaled(11, d.typeScale) }]}>
+                                    {isCollapsed ? '▸' : '▾'} {node.children.length}
+                                </Text>
+                            </Pressable>
+                            {isCollapsed ? (
+                                // GRAFT 10 — a collapsed subtree shows a stacked row of
+                                // its children's faces (max 6, +n), honest per-child
+                                // dimming, square-if-sealed — so the human still sees
+                                // WHO is hidden without expanding.
+                                <View style={styles.collapsedPreview}>
+                                    {node.children.slice(0, 6).map((child) => {
+                                        const { verdict } = deriveLiveness(child.seat, rosterUnreachable);
+                                        return (
+                                            <Avatar
+                                                key={`prev:${child.seat.seat}`}
+                                                id={child.seat.seat}
+                                                size={18}
+                                                monochrome={isDimmed(verdict)}
+                                                square={child.seat.cage_status === 'sealed'}
+                                            />
+                                        );
+                                    })}
+                                    {node.children.length > 6 ? (
+                                        <Text style={[styles.collapsedMore, { fontSize: scaled(11, d.typeScale) }]}>
+                                            +{node.children.length - 6}
+                                        </Text>
+                                    ) : null}
+                                </View>
+                            ) : null}
+                        </View>
+                    ) : null}
+                </View>
+            </View>,
         );
         laneIndex.i += 1;
-        for (const child of node.children) {
-            renderTreeNode(child, laneIndex, out);
+    };
+
+    // Normal (non-cage) subtree walk. renderTile renders a SINGLE node's tile;
+    // the child recursion lives HERE, not inside renderTile — so the cage path
+    // (renderInside) can reuse renderTile for one node without double-rendering
+    // the subtree. (The dup-key bug: renderInside recursed into sealed children
+    // AND renderTile recursed into all children, so every caged seat rendered
+    // twice under the same `row:<seat>` key.)
+    const renderSubtree = (
+        node: CongressTreeNode,
+        localDepth: number,
+        ancestorsContinue: boolean[],
+        isLast: boolean,
+        laneIndex: { i: number },
+        out: React.ReactElement[],
+    ): void => {
+        renderTile(node, localDepth, ancestorsContinue, isLast, laneIndex, out);
+        const isParent = node.children.length > 0;
+        const isCollapsed = collapsed.has(node.seat.seat);
+        if (isParent && !isCollapsed) {
+            const childCount = node.children.length;
+            node.children.forEach((child, ci) => {
+                const childIsLast = ci === childCount - 1;
+                renderSubtree(
+                    child,
+                    localDepth + 1,
+                    // Descending: this node's rail continues past a child row iff
+                    // the child has a later sibling (childIndex < count - 1).
+                    [...ancestorsContinue, !childIsLast],
+                    childIsLast,
+                    laneIndex,
+                    out,
+                );
+            });
         }
+    };
+
+    // Recursive-tier render (2026-07-02, caged ai-ops design). Walks the tree
+    // depth-first. Sealed subtrees are diverted into a CageGroup frame with
+    // rails restarting at 0 inside the teal border (CKP-10/11); everything else
+    // renders through the normal rail walk.
+    const renderTreeNode = (node: CongressTreeNode, laneIndex: { i: number }, out: React.ReactElement[]): void => {
+        const seat = node.seat;
+        // CKP-10 — a sealed cage-root (this seat is sealed and its parent is NOT
+        // sealed, or it's a forest root) opens a CageGroup frame; its sealed
+        // descendants render inside it with rails restarting at 0.
+        if (seat.cage_status === 'sealed') {
+            renderCage(node, laneIndex, out);
+            return;
+        }
+        renderSubtree(node, node.depth, [], node.depth === 0, laneIndex, out);
+    };
+
+    // Count the seats inside ONE cage — the frame's `N seats`. CKP-10: a frame
+    // is keyed off `cage_id`, not tree-adjacency + `cage_status`. Only sealed
+    // descendants sharing THIS cage's id are inside the frame; a differently-
+    // caged sealed child is an escapee that opens its own sovereign frame and is
+    // NOT counted here (counting it would misreport `SEALED · N seats` for a
+    // frame that actually spans two distinct cages — a sovereignty
+    // misrepresentation). `cageId` is the root's own `cage_id` (may be null in
+    // the graft-8 broken-write case; a null-cage frame counts only null-cage
+    // sealed seats, never swallowing a concrete-caged one).
+    const countSealed = (node: CongressTreeNode, cageId: string | null): number => {
+        let n = node.seat.cage_status === 'sealed' && node.seat.cage_id === cageId ? 1 : 0;
+        for (const child of node.children) {
+            if (child.seat.cage_status === 'sealed' && child.seat.cage_id === cageId) {
+                n += countSealed(child, cageId);
+            }
+        }
+        return n;
+    };
+
+    const renderCage = (root: CongressTreeNode, laneIndex: { i: number }, out: React.ReactElement[]): void => {
+        // CKP-10 — the frame is keyed off THIS cage's id, not tree-adjacency +
+        // cage_status. Only sealed descendants sharing `cageId` render inside;
+        // anything else (uncaged, OR sealed-but-differently-caged) exits.
+        const cageId = root.seat.cage_id;
+        const inCage = (n: CongressTreeNode): boolean =>
+            n.seat.cage_status === 'sealed' && n.seat.cage_id === cageId;
+        const inner: React.ReactElement[] = [];
+        // Render the sealed root + its same-cage sealed descendants inside the
+        // frame, rails restarting at 0 (never crossing the teal border). A child
+        // that is NOT same-cage-sealed — uncaged, or sealed in a DIFFERENT cage —
+        // exits the frame and is dispatched as its own subtree below.
+        const renderInside = (node: CongressTreeNode, localDepth: number, ancestorsContinue: boolean[], isLast: boolean): void => {
+            renderTile(node, localDepth, ancestorsContinue, isLast, laneIndex, inner);
+            const sealedChildren = node.children.filter(inCage);
+            const count = sealedChildren.length;
+            sealedChildren.forEach((child, ci) => {
+                const childIsLast = ci === count - 1;
+                renderInside(child, localDepth + 1, [...ancestorsContinue, !childIsLast], childIsLast);
+            });
+        };
+        renderInside(root, 0, [], true);
+        // Warden-dead: the cage-root's own honest verdict is 'dead'.
+        const { verdict: rootVerdict } = deriveLiveness(root.seat, rosterUnreachable);
+        out.push(
+            <CageGroup
+                key={`cage:${root.seat.seat}`}
+                cageId={cageId}
+                seatCount={countSealed(root, cageId)}
+                wardenDead={rootVerdict === 'dead'}
+            >
+                {inner}
+            </CageGroup>,
+        );
+        // Any child that ISN'T same-cage-sealed exits this frame and is
+        // re-dispatched through renderTreeNode: an uncaged child renders as its
+        // own subtree; a sealed-but-differently-caged child (a legitimate nested-
+        // cage layout — cages are orthogonal to tree parentage) opens its OWN
+        // sovereign frame. A cage never swallows a seat it doesn't own, and rails
+        // never cross the border. We only recurse past children that STAY in this
+        // cage; escapees are handed off whole to renderTreeNode (which re-enters
+        // renderCage for a differently-caged sealed subtree).
+        const walkForEscapees = (node: CongressTreeNode): void => {
+            for (const child of node.children) {
+                if (inCage(child)) {
+                    walkForEscapees(child);
+                } else {
+                    renderTreeNode(child, laneIndex, out);
+                }
+            }
+        };
+        walkForEscapees(root);
     };
 
     // Decide which mode we're in:
@@ -201,6 +404,29 @@ export function TheWorkPlane({ selectedSessionId, mockRoster }: {
     //     carries the host+pedal worker fan-out for legacy rosters.
     const treeHasNesting = tree.roots.some((r) => r.children.length > 0);
     const useTreeMode = !!mockRoster || treeHasNesting;
+
+    // GRAFT 5 — terminal-visible-by-default. On the first board-mode paint that
+    // has lanes, auto-select the TOP lane into the operator pane. autoSelect is
+    // a no-op after any explicit user select/clear this mount (the context
+    // enforces that), so it never fights a real choice and never re-fires.
+    const topLane: { sessionId: string; seatId: string | null } | null = React.useMemo(() => {
+        if (useTreeMode) {
+            const root = tree.roots[0];
+            if (root) {
+                const row = sessionBySeatId.get(root.seat.seat) ?? { session: synthesizeSessionRowFromSeat(root.seat), seat: root.seat };
+                return { sessionId: row.session.id, seatId: root.seat.seat };
+            }
+            return null;
+        }
+        const first = lanes[0];
+        return first ? { sessionId: first.session.id, seatId: first.seat?.seat ?? null } : null;
+    }, [useTreeMode, tree.roots, sessionBySeatId, lanes]);
+
+    React.useEffect(() => {
+        if (boardMode && topLane) {
+            selection.autoSelect(topLane.sessionId, topLane.seatId);
+        }
+    }, [boardMode, topLane, selection]);
 
     if (!data && !mockRoster) {
         // First paint, no data yet — quiet, never a fake board.
@@ -268,10 +494,12 @@ export function TheWorkPlane({ selectedSessionId, mockRoster }: {
                     key={row.session.id}
                     row={row}
                     rosterUnreachable={rosterUnreachable}
-                    selected={row.session.id === selectedSessionId}
+                    selected={row.session.id === effectiveSelectedId}
                     workers={workersByLane.get(row.session.id) ?? []}
                     laneIndex={i}
                     depth={0}
+                    boardMode={boardMode}
+                    onSelect={() => selection.select(row.session.id, row.seat?.seat ?? null)}
                 />
             ))}
             {ungroupedWorkers.length > 0 ? (
@@ -296,6 +524,42 @@ export function TheWorkPlane({ selectedSessionId, mockRoster }: {
 const styles = StyleSheet.create((theme) => ({
     plane: {
         marginBottom: 24,
+    },
+    // CKP-11 — a tree row is [ gutter, tile-cell ]. The gutter draws the rails;
+    // the cell holds the tile + its collapse chip.
+    treeRow: {
+        flexDirection: 'row',
+        alignItems: 'stretch',
+    },
+    treeTileCell: {
+        flex: 1,
+        minWidth: 0,
+    },
+    collapseRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginTop: -2,
+        marginBottom: 6,
+        marginLeft: 4,
+    },
+    collapseChip: {
+        paddingVertical: 2,
+        paddingHorizontal: 6,
+    },
+    collapseChipText: {
+        color: theme.colors.textSecondary,
+        ...Typography.default('semiBold'),
+    },
+    collapsedPreview: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+    },
+    collapsedMore: {
+        color: theme.colors.textSecondary,
+        marginLeft: 2,
+        ...Typography.default('semiBold'),
     },
     planeTitleRow: {
         flexDirection: 'row',

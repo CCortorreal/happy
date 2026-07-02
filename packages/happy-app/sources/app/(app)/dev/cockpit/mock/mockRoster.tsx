@@ -9,24 +9,34 @@ import { type Density } from '../density';
 // (it does not move) — this file houses the two dev-only chrome controls that share
 // the densityChip* styles.
 
-// Dev-only density picker. The cockpit's three postures (desktop / phone / deck)
-// all read the SAME component tree — this segmented control switches the
-// DensityContext value so the desk can dogfood all three in one browser tab
-// without simulating device widths. Not shipped to the live surface.
-export function DensityPicker({ density, onChange }: { density: Density; onChange: (d: Density) => void }) {
-    const options: Density[] = ['desktop', 'deck', 'phone'];
+// Dev-only density OVERRIDE picker (CKP-14). Posture is auto-detected off window
+// width (usePosture: >=1180 desktop, else phone — deck is NEVER auto-detected, a
+// couch is not a width). This control lets the desk PIN a posture for dogfooding
+// all three in one browser tab without resizing the window:
+//   - `auto`  (default, override === null) → follow the detected posture; the
+//     chip shows the live detected value, e.g. `auto (desktop)`, so it's never a
+//     silent lie about which layout is actually rendering.
+//   - desktop / deck / phone → force that posture until switched back to auto.
+// Not shipped to the live surface (dev-gated in the shell).
+export function DensityPicker({ override, detected, onChange }: {
+    override: Density | null;
+    detected: Density;
+    onChange: (next: Density | null) => void;
+}) {
+    const options: (Density | null)[] = [null, 'desktop', 'deck', 'phone'];
     return (
         <View style={styles.densityPicker}>
             {options.map((opt) => {
-                const active = opt === density;
+                const active = opt === override;
+                const label = opt === null ? `auto (${detected})` : opt;
                 return (
                     <Pressable
-                        key={opt}
+                        key={opt ?? 'auto'}
                         onPress={() => onChange(opt)}
                         style={[styles.densityChip, active && styles.densityChipActive]}
                     >
                         <Text style={[styles.densityChipText, active && styles.densityChipTextActive]}>
-                            {opt}
+                            {label}
                         </Text>
                     </Pressable>
                 );

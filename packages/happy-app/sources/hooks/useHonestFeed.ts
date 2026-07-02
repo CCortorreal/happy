@@ -30,9 +30,26 @@ import { TokenStorage, AuthCredentials } from '@/auth/tokenStorage';
 // container (an array, a Map-bearing object) still count as empty for the LOUD test
 // (e.g. an empty knock-queue: present but nothing to keep showing).
 
+// A feed's honest lifecycle state, ADDITIVE to `data`/`unreachable` (those two keep
+// their exact prior semantics — every existing consumer compiles untouched). Three
+// terminal-or-transitional states, never two:
+//   - 'binding' — polls have not yet passed the failure threshold AND no contentful data
+//     has EVER been adopted. Genuinely settling: neither confidently live nor confidently
+//     dead. This is the honest "reading…" a gauge shows ONLY while a feed is truly
+//     mid-bind — never a re-bootable ambiguity (the old '—' ↔ 'reading…' mount-oscillation
+//     came from having no distinct terminal-dead state to fall into).
+//   - 'live' — contentful data has been adopted at least once (fresh, or last-known kept
+//     across a blip). The feed has proven itself; render its value (possibly stale).
+//   - 'dead' — failures reached `unreachableAfter` with NO contentful data ever adopted.
+//     A confirmed-dead feed: it stays dead across remounts (the state doesn't re-bind to
+//     'binding' just because the component re-mounted), so a known-dead gauge reads
+//     'can't read' rather than flashing 'reading…' again.
+export type HonestFeedStatus = 'binding' | 'live' | 'dead';
+
 export interface HonestFeed<T> {
     data: T | null;
     unreachable: boolean;
+    status: HonestFeedStatus;
 }
 
 interface HonestFeedOptions<T> {
@@ -48,6 +65,13 @@ const DEFAULT_INTERVAL_MS = 5000;
 // Go loud only after a few consecutive failures so a single mid-write blip doesn't
 // flash an alarm — but a real outage surfaces within ~15s instead of staying dark.
 const DEFAULT_UNREACHABLE_AFTER = 3;
+// FAST-SETTLE cadence (CKP-04): until a feed FIRST settles — data adopted OR dead
+// confirmed — poll every 5s regardless of the feed's lazy steady-state interval, so a
+// lazily-polled feed (disk/backlog at 30s) still reaches a real value or an explicit
+// 'dead' within ~30s of mount instead of leaving the gauge 'reading…' for half a minute.
+// After the first settle we relax to the feed's own `intervalMs`. Never SLOWER than the
+// steady interval (a 5s feed keeps 5s; the min() below guarantees it).
+const FAST_SETTLE_INTERVAL_MS = 5000;
 // A poll that never settles (mesh-hung, nothing listening) is the failure mode a bare
 // `await fetcher()` can't see — it's neither resolved nor rejected, so it must be raced
 // against a deadline shorter than the poll interval and forced to count as a failure.
@@ -60,8 +84,16 @@ export function useHonestFeed<T>(
     const intervalMs = options?.intervalMs ?? DEFAULT_INTERVAL_MS;
     const unreachableAfter = options?.unreachableAfter ?? DEFAULT_UNREACHABLE_AFTER;
 
-    const [state, setState] = React.useState<HonestFeed<T>>({ data: null, unreachable: false });
+    const [state, setState] = React.useState<HonestFeed<T>>({ data: null, unreachable: false, status: 'binding' });
     const failures = React.useRef(0);
+    // Whether contentful data has EVER been adopted this mount — the one-way latch that
+    // separates 'binding' from 'live'. Once true, the feed is 'live' (its data may later
+    // go stale, but it can never fall back to 'binding'/'dead' — it had a real read).
+    const everContentful = React.useRef(false);
+    // Whether the feed has FIRST-settled (data adopted OR dead confirmed) — gates the
+    // fast-settle -> lazy cadence relaxation. Starts false so the first poll window is
+    // the 5s fast cadence.
+    const settled = React.useRef(false);
     // Keep the latest fetcher/predicate live without re-subscribing the poll loop on
     // every render (the closures the caller passes are recreated each render).
     const fetcherRef = React.useRef(fetcher);
@@ -82,11 +114,28 @@ export function useHonestFeed<T>(
         const markFailure = () => {
             failures.current += 1;
             if (!mounted) return;
+            // A failure at/after the threshold with no contentful data ever adopted is
+            // a FIRST-settle into the terminal 'dead' state — relax the cadence off fast.
+            if (failures.current >= unreachableAfter && !everContentful.current) {
+                settled.current = true;
+            }
             setState((prev) => {
                 // LOUD only when there's nothing real to keep showing — a stale read
                 // with content still up keeps showing it, quietly.
                 const loud = failures.current >= unreachableAfter && !contentful(prev.data);
-                return prev.unreachable === loud ? prev : { ...prev, unreachable: loud };
+                // status: 'dead' only when we've crossed the threshold AND never had a
+                // contentful read (a feed that HAD content stays 'live' — its data is
+                // just stale now, honest but not dead). Otherwise still 'binding' (pre-
+                // threshold, no data yet) or 'live' (had content).
+                const nextStatus: HonestFeedStatus = everContentful.current
+                    ? 'live'
+                    : failures.current >= unreachableAfter
+                        ? 'dead'
+                        : 'binding';
+                if (prev.unreachable === loud && prev.status === nextStatus) {
+                    return prev;
+                }
+                return { ...prev, unreachable: loud, status: nextStatus };
             });
         };
 
@@ -114,6 +163,15 @@ export function useHonestFeed<T>(
                     if (mounted && !res.stale) {
                         // Authoritative fresh read (content OR a genuine empty) -> adopt.
                         failures.current = 0;
+                        // A fresh authoritative read is a FIRST-settle (reachable, gave an
+                        // answer) -> relax the cadence off fast. `everContentful` latches
+                        // ONLY on a contentful read (a genuine empty is settled but not
+                        // "content to keep showing") so the dead-re-trip logic stays in
+                        // lockstep with the LOUD-guard's `contentful(prev.data)` test.
+                        settled.current = true;
+                        if (contentful(res.data)) {
+                            everContentful.current = true;
+                        }
                         setState((prev) => {
                             // PR-22 de-flicker: a poll that is semantically identical to the
                             // last-good payload keeps the PRIOR object reference instead of
@@ -124,10 +182,15 @@ export function useHonestFeed<T>(
                             // depends on `data` doesn't recompute every 5s for zero semantic
                             // change; it must never mask a real change (would violate the
                             // honesty-spine this hook exists to enforce).
-                            if (!prev.unreachable && equal(prev.data, res.data)) {
+                            // A fresh authoritative read is 'live' — reachable, gave an
+                            // answer (content or a genuine empty), so it's past 'binding'
+                            // and definitionally not 'dead'. The de-flicker skip must still
+                            // honor a status transition (e.g. binding -> live on the first
+                            // empty read), so it only holds `prev` when status is unchanged.
+                            if (!prev.unreachable && prev.status === 'live' && equal(prev.data, res.data)) {
                                 return prev;
                             }
-                            return { data: res.data, unreachable: false };
+                            return { data: res.data, unreachable: false, status: 'live' };
                         });
                     } else if (mounted) {
                         markFailure();
@@ -142,7 +205,16 @@ export function useHonestFeed<T>(
                     clearTimeout(timeoutHandle);
                 }
                 if (mounted) {
-                    timer = setTimeout(poll, intervalMs);
+                    // Fast-settle: until the feed FIRST settles (data adopted OR dead
+                    // confirmed), poll at the 5s fast cadence so even a 30s-lazy feed
+                    // reaches a real value or an explicit 'dead' within ~30s of mount.
+                    // After settling, relax to the feed's own interval — but never SLOWER
+                    // than fast during binding, and never faster than the steady interval
+                    // afterward (min() keeps an already-5s feed at 5s throughout).
+                    const nextInterval = settled.current
+                        ? intervalMs
+                        : Math.min(intervalMs, FAST_SETTLE_INTERVAL_MS);
+                    timer = setTimeout(poll, nextInterval);
                 }
             }
         };

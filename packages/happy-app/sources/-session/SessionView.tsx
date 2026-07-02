@@ -88,7 +88,7 @@ export const SessionView = React.memo((props: { id: string }) => {
     //
     // On web we snap the value (duration: 0). The animated `width` change
     // triggers a flex-row reflow on every frame, which in turn re-measures
-    // the entire chat tree (FlatList rows, message blocks). At ~60fps that
+    // the entire chat tree (FlashList rows, message blocks). At ~60fps that
     // grinds to ~15fps on dev builds. Snapping skips the layout thrash —
     // the chat reflows once instead of 60 times. Native keeps the smooth
     // animation because it runs on Reanimated's UI thread.

@@ -10,8 +10,8 @@ import { RED } from '../colors';
 import { useDensity, scaled } from '../density';
 
 // ----------------------------------------------------------------------------
-// LANE HANDS (Mission A1) — steer + gated halt on the expanded tile. The
-// cockpit gets hands, mirroring the building's control register:
+// LANE HANDS (Mission A1 / CKP-18) — steer + gated halt. The cockpit gets hands,
+// mirroring the building's control register:
 //   STEER — injects context into the lane's underlying session via the EXACT
 //     send path the session chat screen uses (sync.sendMessage source:'chat',
 //     see SessionView.tsx handleSend) — no new transport, no keystroke
@@ -21,22 +21,51 @@ import { useDensity, scaled } from '../density';
 //   HALT — wired to Happy's existing abort primitive (sessionAbort in
 //     sync/ops.ts — the same sessionRPC 'abort' the chat screen's stop button
 //     fires, including the resetSessionAgentOverrides it does first). Two-
-//     step: tap arms (destructive-red "confirm halt"), second tap within 5s
-//     executes, else disarms. "halt sent" is the strongest claim made — the
-//     lane's own honest state shows whether it actually stopped.
-// Density-aware via the same tokens every atom here reads (minTouchSize /
-// typeScale): desktop inline, phone compact-but-present, deck big targets.
-// Renders ONLY behind the renderSafe gate (a privacy-gated seat is not
-// steerable from this surface) and only for a REAL session row — a SYNTH:
-// seat-only row has no conversable session, which LaneTile says honestly
-// instead of painting a dead input.
-export function LaneHands({ sessionId }: { sessionId: string }) {
-    const { theme } = useUnistyles();
-    const d = useDensity();
+//     step: arm (destructive-red "confirm halt"), confirm within 5s executes,
+//     else disarms. "halt sent" is the strongest claim made — the lane's own
+//     honest state shows whether it actually stopped.
+//
+// ONE transport, no forks (C15): both the inline tile hands (LaneHands below)
+// AND the desktop OperatorPane consume `useLaneHands(sessionId)`. There is
+// exactly one send/halt implementation — the pane and the tile can never
+// disagree about what "steered" or "halt sent" means because they share this
+// hook. `LaneHands` keeps its unchanged `{ sessionId }` props (LaneTile imports
+// it) and simply renders the hook's state.
+// ----------------------------------------------------------------------------
+
+export type SteerState = 'idle' | 'sent' | 'failed';
+// Halt is a richer state machine than steer because CKP-20 (the OperatorPane
+// HALT) must never claim success the feed hasn't confirmed: after 'firing' the
+// caller watches the lane's honest state and only then returns to 'idle'. The
+// inline tile hands use the simpler subset (idle → armed → firing → sent/failed)
+// but the machine is shared so both surfaces agree.
+export type HaltState = 'idle' | 'armed' | 'firing' | 'sent' | 'failed';
+
+export interface LaneHandsController {
+    draft: string;
+    setDraft: (v: string) => void;
+    // Fire the steer send (source:'chat'). No-op on empty/whitespace draft.
+    send: () => void;
+    steerState: SteerState;
+    haltState: HaltState;
+    // Step 1: arm the halt. Auto-disarms after 5s if fireHalt isn't called.
+    armHalt: () => void;
+    // Cancel an armed halt (timeout, or any other press in the pane per CKP-20).
+    disarmHalt: () => void;
+    // Step 2: fire the abort. Only meaningful while armed; sets 'firing' then
+    // 'sent' on transport success (delivery-attempt claim only), 'failed' on throw.
+    fireHalt: () => void;
+}
+
+const STEER_CHIP_MS = 8000;
+const HALT_DISARM_MS = 5000;
+
+// The single send/halt implementation. Both the inline tile hands and the
+// desktop OperatorPane derive their controls from this — zero forked paths.
+export function useLaneHands(sessionId: string): LaneHandsController {
     const [draft, setDraft] = React.useState('');
-    const [steerState, setSteerState] = React.useState<'idle' | 'steered' | 'failed'>('idle');
-    const [haltArmed, setHaltArmed] = React.useState(false);
-    const [haltState, setHaltState] = React.useState<'idle' | 'sent' | 'failed'>('idle');
+    const [steerState, setSteerState] = React.useState<SteerState>('idle');
+    const [haltState, setHaltState] = React.useState<HaltState>('idle');
     const steerChipTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
     const disarmTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -45,39 +74,64 @@ export function LaneHands({ sessionId }: { sessionId: string }) {
         if (disarmTimer.current) clearTimeout(disarmTimer.current);
     }, []);
 
-    const submitSteer = React.useCallback(async () => {
+    const send = React.useCallback(() => {
         const text = draft.trim();
         if (!text) return;
         setDraft('');
-        // Optimistic chip — "steered ·" claims only that the send was fired;
-        // the live tail above is the real evidence of effect (no fake ack).
-        setSteerState('steered');
+        // Optimistic chip — "sent" claims only that the send was fired; the live
+        // tail above is the real evidence of effect (no fake ack).
+        setSteerState('sent');
         if (steerChipTimer.current) clearTimeout(steerChipTimer.current);
-        steerChipTimer.current = setTimeout(() => setSteerState('idle'), 8000);
-        try {
-            await sync.sendMessage(sessionId, text, { source: 'chat' });
-        } catch {
+        steerChipTimer.current = setTimeout(() => setSteerState('idle'), STEER_CHIP_MS);
+        // sync.sendMessage is the EXACT chat-screen send path (SessionView handleSend).
+        sync.sendMessage(sessionId, text, { source: 'chat' }).catch(() => {
             if (steerChipTimer.current) clearTimeout(steerChipTimer.current);
             setSteerState('failed');
-        }
+        });
     }, [draft, sessionId]);
 
-    const onHaltPress = React.useCallback(() => {
-        if (!haltArmed) {
-            // Step 1: ARM. Disarms itself after 5s if not confirmed.
-            setHaltArmed(true);
-            if (disarmTimer.current) clearTimeout(disarmTimer.current);
-            disarmTimer.current = setTimeout(() => setHaltArmed(false), 5000);
-            return;
-        }
-        // Step 2: CONFIRM — the exact chat-screen abort path (SessionView's
-        // handleAbort): reset agent overrides, then the sessionRPC 'abort'.
+    const armHalt = React.useCallback(() => {
+        setHaltState('armed');
         if (disarmTimer.current) clearTimeout(disarmTimer.current);
-        setHaltArmed(false);
-        setHaltState('sent');
+        disarmTimer.current = setTimeout(() => {
+            // Only disarm if still armed — a fire in the window already advanced state.
+            setHaltState((s) => (s === 'armed' ? 'idle' : s));
+        }, HALT_DISARM_MS);
+    }, []);
+
+    const disarmHalt = React.useCallback(() => {
+        if (disarmTimer.current) clearTimeout(disarmTimer.current);
+        setHaltState((s) => (s === 'armed' ? 'idle' : s));
+    }, []);
+
+    const fireHalt = React.useCallback(() => {
+        if (disarmTimer.current) clearTimeout(disarmTimer.current);
+        setHaltState('firing');
+        // The exact chat-screen abort path (SessionView handleAbort): reset agent
+        // overrides, then the sessionRPC 'abort'. 'sent' claims delivery-attempt
+        // only — CKP-20's caller watches the honest feed to learn the outcome.
         storage.getState().resetSessionAgentOverrides(sessionId);
-        sessionAbort(sessionId).catch(() => setHaltState('failed'));
-    }, [haltArmed, sessionId]);
+        sessionAbort(sessionId)
+            .then(() => setHaltState('sent'))
+            .catch(() => setHaltState('failed'));
+    }, [sessionId]);
+
+    return { draft, setDraft, send, steerState, haltState, armHalt, disarmHalt, fireHalt };
+}
+
+export function LaneHands({ sessionId }: { sessionId: string }) {
+    const { theme } = useUnistyles();
+    const d = useDensity();
+    const hands = useLaneHands(sessionId);
+    const haltArmed = hands.haltState === 'armed';
+
+    const onHaltPress = React.useCallback(() => {
+        if (hands.haltState === 'armed') {
+            hands.fireHalt();
+        } else {
+            hands.armHalt();
+        }
+    }, [hands]);
 
     return (
         <View style={styles.laneHands}>
@@ -93,11 +147,11 @@ export function LaneHands({ sessionId }: { sessionId: string }) {
                             styles.laneHandsInput,
                             { fontSize: scaled(13, d.typeScale), minHeight: d.minTouchSize },
                         ]}
-                        value={draft}
-                        onChangeText={setDraft}
+                        value={hands.draft}
+                        onChangeText={hands.setDraft}
                         placeholder="steer — inject context, no keystrokes"
                         placeholderTextColor={theme.colors.textSecondary}
-                        onSubmitEditing={submitSteer}
+                        onSubmitEditing={hands.send}
                         returnKeyType="send"
                         blurOnSubmit={false}
                     />
@@ -119,14 +173,14 @@ export function LaneHands({ sessionId }: { sessionId: string }) {
                     </Text>
                 </Pressable>
             </View>
-            {steerState === 'steered' ? (
+            {hands.steerState === 'sent' ? (
                 <Text style={[styles.laneHandsChip, { fontSize: scaled(11, d.typeScale) }]}>steered ·</Text>
-            ) : steerState === 'failed' ? (
+            ) : hands.steerState === 'failed' ? (
                 <Text style={[styles.laneHandsChipFailed, { fontSize: scaled(11, d.typeScale) }]}>steer failed — didn't reach the lane</Text>
             ) : null}
-            {haltState === 'sent' ? (
+            {hands.haltState === 'sent' ? (
                 <Text style={[styles.laneHandsChip, { fontSize: scaled(11, d.typeScale) }]}>halt sent — watch the lane state</Text>
-            ) : haltState === 'failed' ? (
+            ) : hands.haltState === 'failed' ? (
                 <Text style={[styles.laneHandsChipFailed, { fontSize: scaled(11, d.typeScale) }]}>halt failed — lane didn't take the abort</Text>
             ) : null}
         </View>

@@ -1,7 +1,8 @@
 import * as React from 'react';
 import { useSession, useSessionMessages, useSetting } from "@/sync/storage";
 import { sync } from '@/sync/sync';
-import { ActivityIndicator, AppState, FlatList, NativeScrollEvent, NativeSyntheticEvent, Platform, Pressable, View } from 'react-native';
+import { ActivityIndicator, AppState, NativeScrollEvent, NativeSyntheticEvent, Platform, Pressable, View } from 'react-native';
+import { FlashList, FlashListRef } from '@shopify/flash-list';
 import { useCallback } from 'react';
 import { useHeaderHeight } from '@/utils/responsive';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -17,6 +18,9 @@ import { StyleSheet, useUnistyles } from 'react-native-unistyles';
 import { Modal } from '@/modal';
 import { useSessionQuickActions } from '@/hooks/useSessionQuickActions';
 
+// Distance (px) from the visual bottom past which the scroll-to-bottom button
+// appears. In the non-inverted list, "bottom" is the max scroll offset, so we
+// measure how far the viewport bottom sits above the content bottom.
 const SCROLL_THRESHOLD = 300;
 
 export const ChatList = React.memo((props: { session: Session }) => {
@@ -35,23 +39,27 @@ export const ChatList = React.memo((props: { session: Session }) => {
 const ListHeader = React.memo((props: { isLoadingOlder: boolean }) => {
     const headerHeight = useHeaderHeight();
     const safeArea = useSafeAreaInsets();
-    // ListFooterComponent on an inverted FlatList renders at the visual top
-    // — that is exactly where the spinner for "loading older messages"
-    // belongs. The spacer below keeps the header bar from clipping the
-    // oldest message.
+    // Non-inverted list: ListHeaderComponent renders at the visual TOP — the
+    // OLDEST end — which is exactly where the spinner for "loading older
+    // messages" belongs. The spinner shows only while genuinely fetching an
+    // older page; we never render a fake "caught up" marker. The spacer keeps
+    // the navigation header bar from clipping the oldest message.
     return (
         <View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', height: headerHeight + safeArea.top + 32 }} />
             {props.isLoadingOlder && (
                 <View style={{ paddingVertical: 12, alignItems: 'center', justifyContent: 'center' }}>
                     <ActivityIndicator size="small" />
                 </View>
             )}
-            <View style={{ flexDirection: 'row', alignItems: 'center', height: headerHeight + safeArea.top + 32 }} />
         </View>
     );
 });
 
 const ListFooter = React.memo((props: { sessionId: string }) => {
+    // Non-inverted list: ListFooterComponent renders at the visual BOTTOM —
+    // the NEWEST end — which is where the live "thinking / controlled-by-user"
+    // footer belongs.
     const session = useSession(props.sessionId)!;
     return (
         <ChatFooter controlledByUser={session.agentState?.controlledByUser || false} />
@@ -66,7 +74,7 @@ const ChatListInternal = React.memo((props: {
     isLoadingOlder: boolean,
 }) => {
     const { theme } = useUnistyles();
-    const flatListRef = React.useRef<FlatList>(null);
+    const listRef = React.useRef<FlashListRef<DisplayItem>>(null);
     const [showScrollButton, setShowScrollButton] = React.useState(false);
     // Tracks whether the scroll-button is currently shown, so we only call
     // setShowScrollButton when the threshold is actually crossed instead of
@@ -86,7 +94,14 @@ const ChatListInternal = React.memo((props: {
         () => ({ collapseCurrentTurn }),
         [collapseCurrentTurn],
     );
+    // useGroupedMessages consumes and emits NEWEST-FIRST (its turn-assignment
+    // logic depends on that order, and its only other consumer — the test —
+    // asserts that order). The non-inverted FlashList wants CHRONOLOGICAL
+    // (oldest→newest) data, so we reverse here rather than flipping the hook.
+    // maintainVisibleContentPosition keeps the viewport anchored when older
+    // pages prepend at the top.
     const displayItems = useGroupedMessages(props.messages, groupToolCalls, groupingOptions);
+    const chronologicalItems = React.useMemo(() => [...displayItems].reverse(), [displayItems]);
 
     // Tracks which groups are explicitly collapsed. Groups start collapsed;
     // pending approval groups are the only ones we auto-expand.
@@ -257,15 +272,17 @@ const ChatListInternal = React.memo((props: {
         );
     }, [props.metadata, props.sessionId, canFork, handleForkFromMessage, collapsedGroups, handleToggleGroup]);
 
-    // In inverted FlatList, offset 0 = latest messages (visual bottom).
-    // Offset increases as user scrolls up to see older messages.
-    // Auto-stick-to-bottom on new messages is handled natively by FlatList's
+    // Non-inverted list: the visual BOTTOM is the max scroll offset (newest
+    // message). The scroll-to-bottom button shows when the viewport bottom
+    // sits more than SCROLL_THRESHOLD px above the content bottom.
+    // Auto-stick-to-bottom on new messages is handled by FlashList's
     // maintainVisibleContentPosition.autoscrollToBottomThreshold — no JS-side
-    // scrollToOffset is needed (and running both produces a fight that drags
-    // the user's viewport when reading older messages mid-stream).
+    // scroll is needed (and running both produces a fight that drags the
+    // user's viewport when reading older messages mid-stream).
     const handleScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
-        const offsetY = e.nativeEvent.contentOffset.y;
-        const next = offsetY > SCROLL_THRESHOLD;
+        const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+        const distanceFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
+        const next = distanceFromBottom > SCROLL_THRESHOLD;
         if (next !== showScrollButtonRef.current) {
             showScrollButtonRef.current = next;
             setShowScrollButton(next);
@@ -273,13 +290,17 @@ const ChatListInternal = React.memo((props: {
     }, []);
 
     const scrollToBottom = useCallback(() => {
-        flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+        listRef.current?.scrollToEnd({ animated: true });
     }, []);
 
-    // In an inverted FlatList, `onEndReached` fires when the user scrolls
-    // past the visual top — i.e. when they want to see older history.
-    // Initial fetch only loads the latest 100 messages (see
-    // sync.fetchInitialLatestPage), so we lazy-load earlier pages here.
+    // Non-inverted list: `onStartReached` fires when the user scrolls near the
+    // visual TOP — i.e. when they want to see older history. The initial fetch
+    // only loads the latest 100 messages (see sync.fetchInitialLatestPage) plus
+    // a small bounded prefetch, so we lazy-load earlier pages here.
+    // maintainVisibleContentPosition preserves the viewport when the prepended
+    // page lands. Gated by hasMoreOlder/isLoadingOlder pagination state; on a
+    // page-fetch failure the store's failure path surfaces — we never silently
+    // stop paging with a fake "caught up".
     const sessionId = props.sessionId;
     const hasMoreOlder = props.hasMoreOlder;
     const isLoadingOlder = props.isLoadingOlder;
@@ -288,51 +309,29 @@ const ChatListInternal = React.memo((props: {
         void sync.loadOlderMessages(sessionId);
     }, [sessionId, hasMoreOlder, isLoadingOlder]);
 
-    // On macOS/web, Shift+wheel swaps deltaX/deltaY — restore vertical scrolling
-    React.useEffect(() => {
-        if (Platform.OS !== 'web') return;
-        const node = (flatListRef.current as any)?.getScrollableNode?.() as HTMLElement | undefined;
-        if (!node) return;
-        const handler = (e: WheelEvent) => {
-            if (e.shiftKey && Math.abs(e.deltaX) > 0 && Math.abs(e.deltaY) < 1) {
-                node.scrollTop += e.deltaX;
-                e.preventDefault();
-            }
-        };
-        node.addEventListener('wheel', handler, { passive: false });
-        return () => node.removeEventListener('wheel', handler);
-    }, []);
-
     return (
         <View style={{ flex: 1 }}>
-            <FlatList
-                ref={flatListRef}
-                data={displayItems}
-                inverted={true}
+            <FlashList
+                ref={listRef}
+                data={chronologicalItems}
                 keyExtractor={keyExtractor}
                 maintainVisibleContentPosition={{
-                    // Anchor on the second-newest message (index 1), not the
-                    // newest. The newest slot (index 0) gets a brand-new item
-                    // each agent token, which would otherwise destabilise the
-                    // anchor and drag the viewport up.
-                    //
-                    // autoscrollToTopThreshold: for INVERTED lists this is
-                    // actually the auto-stick-to-visual-bottom threshold —
-                    // contentOffset 0 is at the visual bottom in an inverted
-                    // list, and this prop sticks the viewport to offset 0
-                    // when the user is within N units of it.
-                    minIndexForVisible: 1,
-                    autoscrollToTopThreshold: 50,
+                    // Bottom-anchor on load and stick to bottom while streaming
+                    // when the user is within this fraction of the viewport
+                    // from the bottom; scrolled further up, new messages do NOT
+                    // yank the viewport. Identical on web and native.
+                    startRenderingFromBottom: true,
+                    autoscrollToBottomThreshold: 0.2,
                 }}
                 keyboardShouldPersistTaps="handled"
                 keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'none'}
                 renderItem={renderItem}
                 onScroll={handleScroll}
                 scrollEventThrottle={16}
-                ListHeaderComponent={<ListFooter sessionId={props.sessionId} />}
-                ListFooterComponent={<ListHeader isLoadingOlder={props.isLoadingOlder} />}
-                onEndReached={handleLoadOlder}
-                onEndReachedThreshold={0.5}
+                ListHeaderComponent={<ListHeader isLoadingOlder={props.isLoadingOlder} />}
+                ListFooterComponent={<ListFooter sessionId={props.sessionId} />}
+                onStartReached={handleLoadOlder}
+                onStartReachedThreshold={0.5}
             />
             {showScrollButton && (
                 <View style={styles.scrollButtonContainer}>

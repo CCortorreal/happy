@@ -14,6 +14,7 @@ import { ContextGauge } from '@/components/ContextGauge';
 import { BacklogGauge } from '@/components/BacklogGauge';
 import { GREEN, AMBER, RED, GREY } from '../colors';
 import { useDensity, scaled } from '../density';
+import { VitalGaugeCard, VitalGaugeStatus } from '../components/VitalGaugeCard';
 
 // ============================================================================
 // PLANE 3 — VITALS (ambient telemetry). Vram/Disk/Context/Heartbeat/Backlog
@@ -21,6 +22,11 @@ import { useDensity, scaled } from '../density';
 // tap a dot to expand to the full gauge. A dead feed reads LOUD (red dot), never
 // a calm lie — the strip inherits useHonestFeed's three-state discipline directly
 // (each dot is unreachable ? red : derived-from-data, never a default green).
+//
+// CKP-15: `variant='gauges'` (desktop/deck right rail) swaps the dot-row for
+// glanceable VitalGaugeCards (label + big value + bar + sparkline). `variant='dots'`
+// (default = phone) keeps today's row byte-for-byte. Both share the SAME four feeds,
+// warn predicates, and tap-to-expand full gauges.
 // ============================================================================
 
 type VitalKey = 'vram' | 'disk' | 'context' | 'backlog';
@@ -43,13 +49,66 @@ function vitalDotColor(unreachable: boolean, hasWarning: boolean, hasData: boole
     return GREEN;
 }
 
-export function VitalsStrip() {
+// The gauge-card honest status (CKP-04/15). Derived from the feed's honest signals:
+//   - reachable (not unreachable)               -> 'live'   (a fresh read is up).
+//   - unreachable with last-known data          -> 'dead'   (had it, lost it — loud).
+//   - unreachable with no data + confirmed dead -> 'dead'   (never bound — long copy).
+//   - unreachable with no data, still settling  -> 'binding' (calm 'reading…').
+// The `feedStatus` (only surfaced by useBacklog, which this lane owns) sharpens the
+// last two: with it, a confirmed-dead-never-had-data feed reads 'dead' (the honest
+// 'unavailable — can't read X') instead of an eternal 'reading…'. Feeds whose hooks
+// don't yet surface status (vram/disk/context — owned by other lanes, unchanged) fall
+// back to the had-data heuristic: dead-with-data is loud, no-data is a calm binding.
+function deriveGaugeStatus(
+    unreachable: boolean,
+    hasData: boolean,
+    feedStatus?: 'binding' | 'live' | 'dead',
+): VitalGaugeStatus {
+    if (!unreachable) return 'live';
+    if (hasData) return 'dead';
+    if (feedStatus === 'dead') return 'dead';
+    return 'binding';
+}
+
+// Dot color from the gauge status + warn predicate — keeps the card's dot honest and in
+// lockstep with the status branch (red when dead, grey when binding, warn-color when live).
+function gaugeDotColor(status: VitalGaugeStatus, hasWarning: boolean, atRedLine: boolean): string {
+    if (status === 'dead') return RED;
+    if (status === 'binding') return GREY;
+    if (atRedLine) return RED;
+    if (hasWarning) return AMBER;
+    return GREEN;
+}
+
+// Bar fill color from the warn predicates (per spec): warn -> AMBER, >=90% (vram/ctx) ->
+// RED, else GREEN. A color only ever paints in the LIVE branch (the card enforces that).
+function barColorFor(hasWarning: boolean, atRedLine: boolean): string {
+    if (atRedLine) return RED;
+    if (hasWarning) return AMBER;
+    return GREEN;
+}
+
+export interface VitalsStripProps {
+    variant?: 'dots' | 'gauges';
+}
+
+export function VitalsStrip({ variant = 'dots' }: VitalsStripProps) {
     const dens = useDensity();
     const vram = useVram();
     const disk = useDisk();
     const heartbeat = useHeartbeat();
     const backlog = useBacklog();
     const [expandedKey, setExpandedKey] = React.useState<VitalKey | null>(null);
+
+    // Track the last epoch-ms each feed was reachable-with-data, so a DEAD card can show
+    // 'last read {age} ago' honestly (the feed hooks don't carry a read timestamp).
+    const lastReadAt = React.useRef<Record<VitalKey, number | null>>({
+        vram: null, disk: null, context: null, backlog: null,
+    });
+    if (!vram.unreachable && vram.view) lastReadAt.current.vram = Date.now();
+    if (!disk.unreachable && disk.view) lastReadAt.current.disk = Date.now();
+    if (!heartbeat.unreachable && heartbeat.view) lastReadAt.current.context = Date.now();
+    if (!backlog.unreachable && backlog.view) lastReadAt.current.backlog = Date.now();
 
     const vramWarn = !!vram.view && vram.view.totalMB > 0 && (vram.view.usedMB / vram.view.totalMB) >= 0.75;
     const diskWarn = !!disk.view && disk.view.boxes.some((b) => !b.reachable || b.drives.some((d) => d.status === 'warn' || d.status === 'act'));
@@ -79,6 +138,22 @@ export function VitalsStrip() {
         : backlog.view
             ? (backlog.view.total > 0 ? `${backlog.view.total} queued` : 'backlog clear')
             : '—';
+
+    if (variant === 'gauges') {
+        return (
+            <View style={styles.plane}>
+                <Text style={[styles.planeTitle, { fontSize: scaled(13, dens.typeScale) }]}>VITALS</Text>
+                <View style={[styles.gaugeGrid, { gap: dens.cardGap }]}>
+                    {gaugeCards({ vram, disk, heartbeat, backlog, vramWarn, diskWarn, contextWarn, backlogWarn, lastReadAt: lastReadAt.current, setExpandedKey })}
+                </View>
+
+                {expandedKey === 'vram' ? <VramGauge /> : null}
+                {expandedKey === 'disk' ? <DiskGauge /> : null}
+                {expandedKey === 'context' ? <ContextGauge /> : null}
+                {expandedKey === 'backlog' ? <BacklogGauge /> : null}
+            </View>
+        );
+    }
 
     const dots: { key: VitalKey; label: string; color: string; summary: string }[] = [
         { key: 'vram', label: 'VRAM', color: vitalDotColor(vram.unreachable, vramWarn, !!vram.view), summary: vramSummary },
@@ -123,6 +198,110 @@ export function VitalsStrip() {
     );
 }
 
+// Builds the four gauge cards (CKP-15). Kept a plain function (not a component) so the
+// warn predicates / summaries computed above are reused verbatim — one source of truth
+// for the honest state, shared with the dot-row.
+function gaugeCards(args: {
+    vram: ReturnType<typeof useVram>;
+    disk: ReturnType<typeof useDisk>;
+    heartbeat: ReturnType<typeof useHeartbeat>;
+    backlog: ReturnType<typeof useBacklog>;
+    vramWarn: boolean;
+    diskWarn: boolean;
+    contextWarn: boolean;
+    backlogWarn: boolean;
+    lastReadAt: Record<VitalKey, number | null>;
+    setExpandedKey: React.Dispatch<React.SetStateAction<VitalKey | null>>;
+}) {
+    const { vram, disk, heartbeat, backlog, vramWarn, diskWarn, contextWarn, backlogWarn, lastReadAt, setExpandedKey } = args;
+
+    // --- VRAM: used/total % ---
+    const vramPct = vram.view && vram.view.totalMB > 0 ? vram.view.usedMB / vram.view.totalMB : null;
+    const vramRed = vramPct != null && vramPct >= 0.9;
+    const vramStatus = deriveGaugeStatus(vram.unreachable, !!vram.view);
+    const vramValue = vramPct != null ? `${Math.round(vramPct * 100)}%` : '—';
+    const vramDetail = vram.view
+        ? `${(vram.view.usedMB / 1024).toFixed(1)}/${(vram.view.totalMB / 1024).toFixed(1)} GB`
+        : '';
+
+    // --- DISK: worst-drive % used ---
+    const diskDrives = (disk.view?.boxes ?? []).flatMap((b) => b.drives);
+    const worstDiskPct = diskDrives.reduce<number | null>((worst, d) => {
+        if (d.pctUsed == null) return worst;
+        const frac = d.pctUsed > 1 ? d.pctUsed / 100 : d.pctUsed; // tolerate 0..1 or 0..100
+        return worst == null || frac > worst ? frac : worst;
+    }, null);
+    const toWatch = disk.view
+        ? disk.view.boxes.filter((b) => !b.reachable).length + disk.view.boxes.reduce((n, b) => n + b.drives.filter((d) => d.status !== 'green' && d.status != null).length, 0)
+        : 0;
+    const diskRed = worstDiskPct != null && worstDiskPct >= 0.9;
+    const diskStatus = deriveGaugeStatus(disk.unreachable, !!disk.view);
+    const diskValue = worstDiskPct != null ? `${Math.round(worstDiskPct * 100)}%` : '—';
+    const diskDetail = disk.view ? (toWatch > 0 ? `${toWatch} to watch` : 'all disks healthy') : '';
+
+    // --- CTX: worst seat context-pressure % (same fields contextPressure reads) ---
+    const ctxSeats = heartbeat.view?.seats ?? [];
+    const worstCtxPct = ctxSeats.reduce<number | null>((worst, s) => {
+        const p = s.pctToGate;
+        if (p == null) return worst;
+        return worst == null || p > worst ? p : worst;
+    }, null);
+    const ctxRed = worstCtxPct != null && worstCtxPct >= 0.9;
+    const ctxStatus = deriveGaugeStatus(heartbeat.unreachable, !!heartbeat.view);
+    const ctxValue = worstCtxPct != null ? `${Math.round(worstCtxPct * 100)}%` : '—';
+    const ctxDetail = heartbeat.view
+        ? (heartbeat.view.anyOverdue ? 'overdue' : contextWarn ? 'seat near gate' : 'all seats calm')
+        : '';
+
+    // --- BKLG: queued COUNT as the big number; bar normalized min(total/20, 1) ---
+    const backlogTotal = backlog.view?.total ?? null;
+    const backlogBar = backlogTotal != null ? Math.min(backlogTotal / 20, 1) : null;
+    const backlogStatus = deriveGaugeStatus(backlog.unreachable, !!backlog.view, backlog.status);
+    const backlogValue = backlogTotal != null ? `${backlogTotal}` : '—';
+    const backlogDetail = backlog.view ? 'queued' : '';
+
+    const cards: {
+        key: VitalKey;
+        label: string;
+        status: VitalGaugeStatus;
+        value: string;
+        barPct: number | null;
+        hasWarning: boolean;
+        atRedLine: boolean;
+        sparkValue: number | null;
+        detail: string;
+    }[] = [
+        { key: 'vram', label: 'VRAM', status: vramStatus, value: vramValue, barPct: vramPct, hasWarning: vramWarn, atRedLine: vramRed, sparkValue: vramPct != null ? vramPct * 100 : null, detail: vramDetail },
+        { key: 'disk', label: 'DISK', status: diskStatus, value: diskValue, barPct: worstDiskPct, hasWarning: diskWarn, atRedLine: diskRed, sparkValue: worstDiskPct != null ? worstDiskPct * 100 : null, detail: diskDetail },
+        { key: 'context', label: 'CTX', status: ctxStatus, value: ctxValue, barPct: worstCtxPct, hasWarning: contextWarn, atRedLine: ctxRed, sparkValue: worstCtxPct != null ? worstCtxPct * 100 : null, detail: ctxDetail },
+        { key: 'backlog', label: 'BKLG', status: backlogStatus, value: backlogValue, barPct: backlogBar, hasWarning: backlogWarn, atRedLine: false, sparkValue: backlogTotal, detail: backlogDetail },
+    ];
+
+    return cards.map((c) => (
+        <Pressable
+            key={c.key}
+            style={styles.gaugeCardWrap}
+            onPress={() => {
+                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                setExpandedKey((k) => (k === c.key ? null : c.key));
+            }}
+        >
+            <VitalGaugeCard
+                vitalKey={c.key}
+                label={c.label}
+                status={c.status}
+                value={c.value}
+                barPct={c.barPct}
+                barColor={barColorFor(c.hasWarning, c.atRedLine)}
+                dotColor={gaugeDotColor(c.status, c.hasWarning, c.atRedLine)}
+                sparkValue={c.sparkValue}
+                detail={c.detail}
+                lastReadAt={lastReadAt[c.key]}
+            />
+        </Pressable>
+    ));
+}
+
 const styles = StyleSheet.create((theme) => ({
     plane: {
         marginBottom: 24,
@@ -137,7 +316,7 @@ const styles = StyleSheet.create((theme) => ({
         ...Typography.default('semiBold'),
     },
 
-    // --- VITALS strip ---
+    // --- VITALS strip (dots variant) ---
     vitalsRow: {
         flexDirection: 'row',
         flexWrap: 'wrap',
@@ -166,5 +345,14 @@ const styles = StyleSheet.create((theme) => ({
         fontSize: 11,
         color: theme.colors.textSecondary,
         ...Typography.default(),
+    },
+
+    // --- VITALS gauges variant (CKP-15) ---
+    gaugeGrid: {
+        gap: 8,
+    },
+    gaugeCardWrap: {
+        // Each card is fixed-height (64) internally; the wrap just carries the press.
+        width: '100%',
     },
 }));

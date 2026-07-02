@@ -7,7 +7,7 @@ import { Avatar } from '@/components/Avatar';
 import { StatusDot } from '@/components/StatusDot';
 import { CongressSeat } from '@/sync/congressTypes';
 import { deriveLiveness } from '@/sync/liveness';
-import { GREEN, AMBER, RED, GREY } from '../colors';
+import { GREEN, AMBER, RED, GREY, isDimmed } from '../colors';
 import { useDensity, scaled } from '../density';
 
 export const WORKER_AVATAR_SHOWN = 8;
@@ -20,9 +20,14 @@ export function WorkerAvatar({ worker, rosterUnreachable }: { worker: CongressSe
     const { verdict } = deriveLiveness(worker, rosterUnreachable);
     const color = verdict === 'alive' ? GREEN : verdict === 'wedged' ? AMBER : verdict === 'dead' ? RED : GREY;
     const label = worker.currentWork?.trim() || worker.model?.trim() || worker.role?.trim() || worker.seat;
+    // CKP-12 monochrome policy — a worker keeps its identity color unless it's
+    // confidently gone (dead) or unverifiable. The old `verdict !== 'alive'`
+    // drained idle/wedged workers to grey too, erasing identity from a lane
+    // that's merely quiet. Sealed workers get a square face (sovereignty ch. 2).
+    const sealed = worker.cage_status === 'sealed';
     return (
         <View style={[styles.workerAvatarWrap, { width: d.workerAvatarSize + 26 }]}>
-            <Avatar id={worker.seat} size={d.workerAvatarSize} monochrome={verdict !== 'alive'} />
+            <Avatar id={worker.seat} size={d.workerAvatarSize} monochrome={isDimmed(verdict)} square={sealed} />
             <StatusDot color={color} isPulsing={verdict === 'alive'} size={7} style={styles.workerDot} />
             <Text style={[styles.workerLabel, { fontSize: scaled(9.5, d.typeScale) }]} numberOfLines={1}>{label}</Text>
         </View>

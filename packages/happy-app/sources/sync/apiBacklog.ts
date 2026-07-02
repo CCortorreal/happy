@@ -13,15 +13,16 @@ import { BacklogResponse, BacklogResponseSchema } from './backlogTypes';
  * unparseable body, returns `{ stale: true, view: null }` so the caller keeps last-good
  * and the LOUD-guard distinguishes broken from quiet.
  */
-export async function getBacklog(credentials: AuthCredentials): Promise<BacklogResponse> {
+export async function getBacklog(credentials: AuthCredentials, signal?: AbortSignal): Promise<BacklogResponse> {
     const API_ENDPOINT = getServerUrl();
-    return await backoff(async () => {
+    const doFetch = async (): Promise<BacklogResponse> => {
         const response = await fetch(`${API_ENDPOINT}/v1/backlog`, {
             method: 'GET',
             headers: {
                 'Authorization': `Bearer ${credentials.token}`,
                 'X-Happy-Client': getHappyClientId(),
-            }
+            },
+            signal,
         });
         if (!response.ok) {
             return { stale: true, view: null };
@@ -33,5 +34,10 @@ export async function getBacklog(credentials: AuthCredentials): Promise<BacklogR
             return { stale: true, view: null };
         }
         return parsed.data;
-    });
+    };
+    // When the caller (useHonestFeed) supplies an AbortSignal, SKIP backoff:
+    // useHonestFeed already re-polls on failure, and backoff would swallow an
+    // AbortError from fetch and retry forever, leaking orphaned retries past the
+    // 4s poll timeout. Callers without a signal keep the legacy backoff behavior.
+    return signal ? doFetch() : backoff(doFetch);
 }

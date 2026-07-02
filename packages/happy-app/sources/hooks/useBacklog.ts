@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { getBacklog } from '@/sync/apiBacklog';
 import { BacklogView } from '@/sync/backlogTypes';
-import { useHonestFeed } from '@/hooks/useHonestFeed';
+import { useHonestFeed, HonestFeedStatus } from '@/hooks/useHonestFeed';
 
 // useBacklog — Hearth MONITOR pillar (the backlog gauge feed).
 //
@@ -18,13 +18,16 @@ import { useHonestFeed } from '@/hooks/useHonestFeed';
 
 const POLL_INTERVAL_MS = 30000;   // backlog moves slowly; idle-cheap polling
 
-export function useBacklog(): { view: BacklogView | null; unreachable: boolean } {
-    const { data, unreachable } = useHonestFeed<BacklogView>(
-        async (credentials) => {
-            const response = await getBacklog(credentials);
+export function useBacklog(): { view: BacklogView | null; unreachable: boolean; status: HonestFeedStatus } {
+    const { data, unreachable, status } = useHonestFeed<BacklogView>(
+        async (credentials, signal) => {
+            const response = await getBacklog(credentials, signal);
             return { stale: response.stale, data: response.stale ? null : response.view };
         },
         { intervalMs: POLL_INTERVAL_MS, hasContent: (v) => v.total > 0 },
     );
-    return React.useMemo(() => ({ view: data, unreachable }), [data, unreachable]);
+    // `status` surfaced additively (the vital-gauge card needs BINDING/LIVE/DEAD to pick
+    // its honest copy — a confirmed-dead backlog says 'unavailable — can't read BKLG'
+    // rather than sharing the calm 'reading…' with a still-binding one).
+    return React.useMemo(() => ({ view: data, unreachable, status }), [data, unreachable, status]);
 }

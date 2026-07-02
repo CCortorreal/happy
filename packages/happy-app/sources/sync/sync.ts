@@ -1907,8 +1907,19 @@ class Sync {
 
     private prefetchOlderMessagesInBackground = async (sessionId: string) => {
         const SLEEP_BETWEEN_PAGES_MS = 250;
+        // Bound the eager prefetch to a small buffer above the initial latest
+        // page. Previously this loop streamed the ENTIRE history into the
+        // store on open — for a multi-thousand-message session that meant the
+        // scroller grew to the full content height, every cell mounted, and
+        // re-sort/regroup cost ballooned within ~40s of opening. We now fetch
+        // at most PREFETCH_MAX_PAGES additional pages (~a scroll-buffer's
+        // worth) so the first paint is bounded; the rest is lazy-driven by
+        // the chat list's onStartReached as the user actually scrolls up.
+        const PREFETCH_MAX_PAGES = 3;
+        let pagesFetched = 0;
         // While loadOlderMessages handles the actual work, this loop is what
         // keeps it going without user input. We keep stepping until either:
+        //   - we've fetched our prefetch buffer (PREFETCH_MAX_PAGES), or
         //   - the server says there is no more older history, or
         //   - the session is no longer present in the store (user navigated
         //     away and the session was unloaded), or
@@ -1917,6 +1928,9 @@ class Sync {
         // The loop yields between pages to keep the UI thread responsive
         // and to spread out server load.
         while (true) {
+            if (pagesFetched >= PREFETCH_MAX_PAGES) {
+                return;
+            }
             const sessionMessages = storage.getState().sessionMessages[sessionId];
             if (!sessionMessages || !sessionMessages.hasMoreOlder) {
                 return;
@@ -1931,6 +1945,7 @@ class Sync {
 
             try {
                 await this.loadOlderMessages(sessionId);
+                pagesFetched++;
             } catch (error) {
                 log.log(`💬 prefetchOlderMessagesInBackground: error for ${sessionId}, stopping: ${String(error)}`);
                 return;
