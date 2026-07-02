@@ -771,17 +771,25 @@ function VitalsStrip() {
 
     return (
         <View style={styles.plane}>
-            <Text style={styles.planeTitle}>VITALS</Text>
-            <View style={styles.vitalsRow}>
+            <Text style={[styles.planeTitle, { fontSize: scaled(13, dens.typeScale) }]}>VITALS</Text>
+            <View style={[styles.vitalsRow, { gap: dens.cardGap }]}>
                 {dots.map((d) => (
                     <Pressable
                         key={d.key}
-                        style={styles.vitalDotWrap}
+                        style={[
+                            styles.vitalDotWrap,
+                            {
+                                gap: Math.max(4, Math.round(dens.cardGap * 0.6)),
+                                paddingHorizontal: dens.cardPaddingH,
+                                paddingVertical: dens.cardPaddingV,
+                                minWidth: scaled(140, dens.typeScale),
+                            },
+                        ]}
                         onPress={() => setExpandedKey((k) => (k === d.key ? null : d.key))}
                     >
                         <StatusDot color={d.color} size={8} />
-                        <Text style={styles.vitalLabel}>{d.label}</Text>
-                        <Text style={styles.vitalSummary} numberOfLines={1}>{d.summary}</Text>
+                        <Text style={[styles.vitalLabel, { fontSize: scaled(11, dens.typeScale) }]}>{d.label}</Text>
+                        <Text style={[styles.vitalSummary, { fontSize: scaled(11, dens.typeScale) }]} numberOfLines={1}>{d.summary}</Text>
                     </Pressable>
                 ))}
             </View>
