@@ -19,7 +19,16 @@ export function useHeartbeat(): { view: HeartbeatView | null; unreachable: boole
             const response = await getHeartbeat(credentials);
             return { stale: response.stale, data: response.stale ? null : response.view };
         },
-        { intervalMs: POLL_INTERVAL_MS },
+        {
+            intervalMs: POLL_INTERVAL_MS,
+            // hasContent — closes G13 (permanently-dead-feed regression): the
+            // HeartbeatView is a `{ threshold, seats: [], anyInDanger, anyOverdue }`
+            // container. A projection with an empty roster (no seats enrolled)
+            // reads as present-but-empty; without this predicate, one successful
+            // read locks `unreachable` false forever. A dying daemon must still
+            // go LOUD — freshness IS liveness here.
+            hasContent: (view) => view.seats.length > 0,
+        },
     );
     return React.useMemo(() => ({ view: data, unreachable }), [data, unreachable]);
 }

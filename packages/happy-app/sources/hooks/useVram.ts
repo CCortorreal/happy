@@ -17,6 +17,12 @@ export function useVram(): { view: VramView | null; unreachable: boolean } {
             const response = await getVram(credentials);
             return { stale: response.stale, data: response.stale ? null : response.view };
         },
+        // hasContent — closes G13 (permanently-dead-feed regression): without a
+        // predicate, once ANY successful read lands, `contentful(prev.data)` in
+        // useHonestFeed reads true forever and `unreachable` can never re-trip.
+        // A dead GPU projection ({} with totalMB:0 and no consumers) counts as
+        // empty-but-fresh so a later persistent outage still goes LOUD.
+        { hasContent: (view) => view.totalMB > 0 || view.consumers.length > 0 },
     );
     return React.useMemo(() => ({ view: data, unreachable }), [data, unreachable]);
 }

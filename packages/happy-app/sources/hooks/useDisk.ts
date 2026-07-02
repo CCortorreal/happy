@@ -22,7 +22,15 @@ export function useDisk(): { view: DiskView | null; unreachable: boolean } {
             const response = await getDisk(credentials);
             return { stale: response.stale, data: response.stale ? null : response.view };
         },
-        { intervalMs: POLL_INTERVAL_MS },
+        {
+            intervalMs: POLL_INTERVAL_MS,
+            // hasContent — closes G13 (permanently-dead-feed regression): the
+            // DiskView shape is a `{ thresholds, boxes: [] }` container, so a
+            // present-but-empty projection (no boxes probed) reads as fresh-empty.
+            // Without this, one successful read pins `unreachable` false forever;
+            // with it, an empty-boxes feed that then dies still escalates LOUD.
+            hasContent: (view) => view.boxes.length > 0,
+        },
     );
     return React.useMemo(() => ({ view: data, unreachable }), [data, unreachable]);
 }
