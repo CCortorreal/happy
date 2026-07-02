@@ -17,6 +17,9 @@ import { useCongressRoster } from '@/hooks/useCongressRoster';
 import { useCongressTree, CongressTreeNode, MOCK_RECURSIVE_ROSTER } from '@/hooks/useCongressTree';
 import { useNavigateToSession } from '@/hooks/useNavigateToSession';
 import { useLaneTail } from '@/hooks/useLaneTail';
+import { sync } from '@/sync/sync';
+import { storage } from '@/sync/storage';
+import { sessionAbort } from '@/sync/ops';
 import { CongressSeat } from '@/sync/congressTypes';
 import { SessionRowData } from '@/sync/storage';
 import { useLocalSetting } from '@/sync/storage';
@@ -27,6 +30,10 @@ import { useVram } from '@/hooks/useVram';
 import { useDisk } from '@/hooks/useDisk';
 import { useHeartbeat } from '@/hooks/useHeartbeat';
 import { useBacklog } from '@/hooks/useBacklog';
+import { useCongressKanban } from '@/hooks/useCongressKanban';
+import { useCongressRelay } from '@/hooks/useCongressRelay';
+import { CongressKanbanCounts } from '@/sync/congressKanbanTypes';
+import { CongressRelayItem } from '@/sync/congressRelayTypes';
 import { VramGauge } from '@/components/VramGauge';
 import { DiskGauge } from '@/components/DiskGauge';
 import { ContextGauge } from '@/components/ContextGauge';
@@ -528,7 +535,153 @@ function laneHonestState(seat: CongressSeat | undefined, rosterUnreachable: bool
 // pattern the munder building's FloorTile hierarchy uses.
 const NESTED_INDENT_PX = 28;
 
-function LaneTile({ row, rosterUnreachable, selected, workers, laneIndex, depth }: {
+// KANBAN CHIPS (mission A3, work-state grid). Building-style compact counts:
+// blocked reads amber (the one state that needs attention), done reads muted
+// (past-tense, not a call to action), todo/doing read neutral text. Density-
+// aware sizing via the caller's scaled() calls. Absent data (undefined, or
+// every count null) renders NOTHING — honest omission per the mission spec,
+// never zeros-as-real (a lane with a real 0 todo would need the oracle to
+// have actually said so, which cardCounts' honest-null discipline already
+// guards upstream in congressKanbanTypes.ts/apiCongressKanban.ts).
+function KanbanChips({ counts, typeScale }: { counts: CongressKanbanCounts | undefined; typeScale: number }) {
+    if (!counts) return null;
+    const chips: { key: string; label: string; value: number; color: string }[] = [];
+    if (counts.todo != null && counts.todo > 0) chips.push({ key: 'todo', label: 'todo', value: counts.todo, color: GREY });
+    if (counts.doing != null && counts.doing > 0) chips.push({ key: 'doing', label: 'doing', value: counts.doing, color: GREEN });
+    if (counts.blocked != null && counts.blocked > 0) chips.push({ key: 'blocked', label: 'blocked', value: counts.blocked, color: AMBER });
+    if (counts.done != null && counts.done > 0) chips.push({ key: 'done', label: 'done', value: counts.done, color: GREY });
+    if (chips.length === 0) return null;
+    return (
+        <View style={styles.kanbanChipsRow}>
+            {chips.map((c) => (
+                <View key={c.key} style={[styles.kanbanChip, c.key === 'blocked' && styles.kanbanChipBlocked]}>
+                    <Text style={[styles.kanbanChipText, { color: c.color, fontSize: scaled(10.5, typeScale) }, c.key === 'done' && styles.kanbanChipTextMuted]}>
+                        {c.value} {c.label}
+                    </Text>
+                </View>
+            ))}
+        </View>
+    );
+}
+
+// ----------------------------------------------------------------------------
+// LANE HANDS (Mission A1) — steer + gated halt on the expanded tile. The
+// cockpit gets hands, mirroring the building's control register:
+//   STEER — injects context into the lane's underlying session via the EXACT
+//     send path the session chat screen uses (sync.sendMessage source:'chat',
+//     see SessionView.tsx handleSend) — no new transport, no keystroke
+//     simulation. The ack is honest: an optimistic "steered ·" chip (we sent
+//     it, nothing more claimed) and then the live tail itself shows the
+//     effect. A send that throws reads LOUD ("steer failed"), never quiet.
+//   HALT — wired to Happy's existing abort primitive (sessionAbort in
+//     sync/ops.ts — the same sessionRPC 'abort' the chat screen's stop button
+//     fires, including the resetSessionAgentOverrides it does first). Two-
+//     step: tap arms (destructive-red "confirm halt"), second tap within 5s
+//     executes, else disarms. "halt sent" is the strongest claim made — the
+//     lane's own honest state shows whether it actually stopped.
+// Density-aware via the same tokens every atom here reads (minTouchSize /
+// typeScale): desktop inline, phone compact-but-present, deck big targets.
+// Renders ONLY behind the renderSafe gate (a privacy-gated seat is not
+// steerable from this surface) and only for a REAL session row — a SYNTH:
+// seat-only row has no conversable session, which LaneTile says honestly
+// instead of painting a dead input.
+function LaneHands({ sessionId }: { sessionId: string }) {
+    const { theme } = useUnistyles();
+    const d = useDensity();
+    const [draft, setDraft] = React.useState('');
+    const [steerState, setSteerState] = React.useState<'idle' | 'steered' | 'failed'>('idle');
+    const [haltArmed, setHaltArmed] = React.useState(false);
+    const [haltState, setHaltState] = React.useState<'idle' | 'sent' | 'failed'>('idle');
+    const steerChipTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+    const disarmTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    React.useEffect(() => () => {
+        if (steerChipTimer.current) clearTimeout(steerChipTimer.current);
+        if (disarmTimer.current) clearTimeout(disarmTimer.current);
+    }, []);
+
+    const submitSteer = React.useCallback(async () => {
+        const text = draft.trim();
+        if (!text) return;
+        setDraft('');
+        // Optimistic chip — "steered ·" claims only that the send was fired;
+        // the live tail above is the real evidence of effect (no fake ack).
+        setSteerState('steered');
+        if (steerChipTimer.current) clearTimeout(steerChipTimer.current);
+        steerChipTimer.current = setTimeout(() => setSteerState('idle'), 8000);
+        try {
+            await sync.sendMessage(sessionId, text, { source: 'chat' });
+        } catch {
+            if (steerChipTimer.current) clearTimeout(steerChipTimer.current);
+            setSteerState('failed');
+        }
+    }, [draft, sessionId]);
+
+    const onHaltPress = React.useCallback(() => {
+        if (!haltArmed) {
+            // Step 1: ARM. Disarms itself after 5s if not confirmed.
+            setHaltArmed(true);
+            if (disarmTimer.current) clearTimeout(disarmTimer.current);
+            disarmTimer.current = setTimeout(() => setHaltArmed(false), 5000);
+            return;
+        }
+        // Step 2: CONFIRM — the exact chat-screen abort path (SessionView's
+        // handleAbort): reset agent overrides, then the sessionRPC 'abort'.
+        if (disarmTimer.current) clearTimeout(disarmTimer.current);
+        setHaltArmed(false);
+        setHaltState('sent');
+        storage.getState().resetSessionAgentOverrides(sessionId);
+        sessionAbort(sessionId).catch(() => setHaltState('failed'));
+    }, [haltArmed, sessionId]);
+
+    return (
+        <View style={styles.laneHands}>
+            <View style={[styles.laneHandsRow, { gap: Math.max(6, Math.round(d.cardGap * 0.8)) }]}>
+                <TextInput
+                    style={[
+                        styles.laneHandsInput,
+                        { fontSize: scaled(13, d.typeScale), minHeight: d.minTouchSize },
+                    ]}
+                    value={draft}
+                    onChangeText={setDraft}
+                    placeholder="steer — inject context, no keystrokes"
+                    placeholderTextColor={theme.colors.textSecondary}
+                    onSubmitEditing={submitSteer}
+                    returnKeyType="send"
+                    blurOnSubmit={false}
+                />
+                <Pressable
+                    onPress={onHaltPress}
+                    style={[
+                        styles.laneHandsHalt,
+                        { minHeight: d.minTouchSize, minWidth: Math.max(d.minTouchSize, 64) },
+                        haltArmed && styles.laneHandsHaltArmed,
+                    ]}
+                >
+                    <Text style={[
+                        styles.laneHandsHaltText,
+                        { fontSize: scaled(12, d.typeScale) },
+                        haltArmed && styles.laneHandsHaltTextArmed,
+                    ]}>
+                        {haltArmed ? 'confirm halt' : 'halt'}
+                    </Text>
+                </Pressable>
+            </View>
+            {steerState === 'steered' ? (
+                <Text style={[styles.laneHandsChip, { fontSize: scaled(11, d.typeScale) }]}>steered ·</Text>
+            ) : steerState === 'failed' ? (
+                <Text style={[styles.laneHandsChipFailed, { fontSize: scaled(11, d.typeScale) }]}>steer failed — didn't reach the lane</Text>
+            ) : null}
+            {haltState === 'sent' ? (
+                <Text style={[styles.laneHandsChip, { fontSize: scaled(11, d.typeScale) }]}>halt sent — watch the lane state</Text>
+            ) : haltState === 'failed' ? (
+                <Text style={[styles.laneHandsChipFailed, { fontSize: scaled(11, d.typeScale) }]}>halt failed — lane didn't take the abort</Text>
+            ) : null}
+        </View>
+    );
+}
+
+function LaneTile({ row, rosterUnreachable, selected, workers, laneIndex, depth, kanban }: {
     row: LaneRow;
     rosterUnreachable: boolean;
     selected: boolean;
@@ -544,6 +697,10 @@ function LaneTile({ row, rosterUnreachable, selected, workers, laneIndex, depth 
     // nesting. Backward-compat: existing flat-list callers pass 0 (or omit if
     // TypeScript allows) and get the identical un-indented render.
     depth: number;
+    // Mission A3: this lane's kanban counts keyed by its seat id (undefined
+    // when the lane has no congress seat, or the seat isn't in the kanban
+    // feed's map — both render as absent chips, never zeros).
+    kanban: CongressKanbanCounts | undefined;
 }) {
     const { theme } = useUnistyles();
     const d = useDensity();
@@ -625,6 +782,7 @@ function LaneTile({ row, rosterUnreachable, selected, workers, laneIndex, depth 
                             {workLine}
                         </Text>
                     </View>
+                    <KanbanChips counts={kanban} typeScale={d.typeScale} />
                 </View>
                 <Pressable
                     hitSlop={8}
@@ -728,6 +886,7 @@ function TheWorkPlane({ selectedSessionId, mockRoster }: {
     const d = useDensity();
     const data = useVisibleSessionListViewData();
     const { sessions: roster, workers, unreachable: rosterUnreachable } = useCongressRoster();
+    const { seats: kanbanSeats } = useCongressKanban();
     const tree = useCongressTree(mockRoster ?? null);
 
     // Flatten the view-model to a plain lane list — THE WORK is the living center,
@@ -790,6 +949,7 @@ function TheWorkPlane({ selectedSessionId, mockRoster }: {
                 workers={node.children.length === 0 && liveRow ? (workersByLane.get(liveRow.session.id) ?? []) : []}
                 laneIndex={laneIndex.i}
                 depth={node.depth}
+                kanban={kanbanSeats.get(node.seat.seat)}
             />,
         );
         laneIndex.i += 1;
@@ -878,6 +1038,7 @@ function TheWorkPlane({ selectedSessionId, mockRoster }: {
                     workers={workersByLane.get(row.session.id) ?? []}
                     laneIndex={i}
                     depth={0}
+                    kanban={row.seat ? kanbanSeats.get(row.seat.seat) : undefined}
                 />
             ))}
             {ungroupedWorkers.length > 0 ? (
@@ -1003,6 +1164,86 @@ function VitalsStrip() {
             {expandedKey === 'disk' ? <DiskGauge /> : null}
             {expandedKey === 'context' ? <ContextGauge /> : null}
             {expandedKey === 'backlog' ? <BacklogGauge /> : null}
+        </View>
+    );
+}
+
+// ============================================================================
+// PLANE 4 — RELAY (mission A3). Newest-last inter-seat message feed, mono
+// style matching the lane tail. Boring-when-healthy: an empty relay is a
+// quiet line, never an empty labeled box; a dead feed is honest-empty (the
+// feed's own stale/unreachable state degrades to zero items, not a fake row —
+// see apiCongressRelay.ts/useCongressRelay.ts). Density-aware: desktop shows
+// the last ~8 with scroll, phone collapses to a tap-to-expand section.
+// ============================================================================
+
+const RELAY_DESKTOP_VISIBLE = 8;
+
+function RelayRow({ item, typeScale }: { item: CongressRelayItem; typeScale: number }) {
+    const ts = item.ts != null ? new Date(item.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '--:--:--';
+    return (
+        <Text style={[styles.relayRowText, { fontSize: scaled(12, typeScale) }]} numberOfLines={1}>
+            {ts} · {item.from} → {item.to} · {item.excerpt}
+        </Text>
+    );
+}
+
+function RelayPlane() {
+    const d = useDensity();
+    const { items, unreachable } = useCongressRelay();
+    const [phoneExpanded, setPhoneExpanded] = React.useState(false);
+
+    // Honest empty state: nothing to relay AND the feed isn't unreachable ->
+    // the calm all-clear line, same pattern as NeedsYouPlane's quiet state.
+    if (items.length === 0 && !unreachable) {
+        return (
+            <View style={[styles.plane, { marginBottom: d.planeGap }]}>
+                <Text style={[styles.planeTitle, { fontSize: scaled(13, d.typeScale) }]}>RELAY</Text>
+                <View style={styles.quietLineRow}>
+                    <StatusDot color={GREY} size={6} />
+                    <Text style={[styles.quietLine, { fontSize: scaled(13, d.typeScale) }]}>No relay traffic</Text>
+                </View>
+            </View>
+        );
+    }
+
+    if (items.length === 0 && unreachable) {
+        return (
+            <View style={[styles.plane, { marginBottom: d.planeGap }]}>
+                <Text style={[styles.planeTitle, { fontSize: scaled(13, d.typeScale) }]}>RELAY</Text>
+                <View style={[styles.unreachableCard, { borderRadius: d.cardRadius, paddingVertical: d.cardPaddingV, paddingHorizontal: d.cardPaddingH }]}>
+                    <FeedUnreachable message="can't reach the relay log" />
+                </View>
+            </View>
+        );
+    }
+
+    // Phone: collapsed-by-default section, tap the header to expand (mirrors
+    // VitalsStrip's tap-to-expand gauge pattern rather than a new toggle idiom).
+    if (d.density === 'phone' && !phoneExpanded) {
+        return (
+            <View style={[styles.plane, { marginBottom: d.planeGap }]}>
+                <Pressable onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setPhoneExpanded(true); }}>
+                    <Text style={[styles.planeTitle, { fontSize: scaled(13, d.typeScale) }]}>RELAY · {items.length} · tap to expand</Text>
+                </Pressable>
+            </View>
+        );
+    }
+
+    const desktopVisible = items.slice(-RELAY_DESKTOP_VISIBLE);
+
+    return (
+        <View style={[styles.plane, { marginBottom: d.planeGap }]}>
+            <Pressable disabled={d.density !== 'phone'} onPress={() => setPhoneExpanded(false)}>
+                <Text style={[styles.planeTitle, { fontSize: scaled(13, d.typeScale) }]}>RELAY · {items.length}</Text>
+            </Pressable>
+            {d.density === 'desktop' ? (
+                <ScrollView style={styles.relayScroll} nestedScrollEnabled>
+                    {desktopVisible.map((item) => <RelayRow key={item.id} item={item} typeScale={d.typeScale} />)}
+                </ScrollView>
+            ) : (
+                items.slice(-4).map((item) => <RelayRow key={item.id} item={item} typeScale={d.typeScale} />)
+            )}
         </View>
     );
 }
@@ -1141,6 +1382,7 @@ export function CockpitV2Screen() {
                     <NeedsYouPlane />
                     <TheWorkPlane mockRoster={mockOn ? MOCK_RECURSIVE_ROSTER : null} />
                     <VitalsStrip />
+                    <RelayPlane />
                 </View>
             </ScrollView>
         </DensityContext.Provider>
@@ -1585,5 +1827,41 @@ const styles = StyleSheet.create((theme) => ({
         fontSize: 11,
         color: theme.colors.textSecondary,
         ...Typography.default(),
+    },
+
+    // --- KANBAN CHIPS (mission A3) ---
+    kanbanChipsRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 5,
+        marginTop: 5,
+    },
+    kanbanChip: {
+        paddingHorizontal: 6,
+        paddingVertical: 1,
+        borderRadius: 5,
+        backgroundColor: theme.colors.groupped.background,
+    },
+    kanbanChipBlocked: {
+        backgroundColor: 'rgba(255, 149, 0, 0.12)',
+    },
+    kanbanChipText: {
+        fontSize: 10.5,
+        ...Typography.default('semiBold'),
+    },
+    kanbanChipTextMuted: {
+        opacity: 0.7,
+    },
+
+    // --- RELAY plane (mission A3) ---
+    relayScroll: {
+        maxHeight: 200,
+    },
+    relayRowText: {
+        fontSize: 12,
+        lineHeight: 17,
+        color: theme.colors.text,
+        marginBottom: 2,
+        ...Typography.mono(),
     },
 }));
