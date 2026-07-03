@@ -208,6 +208,12 @@ export default function DevScreen() {
             {/* Component Demos */}
             <ItemGroup title="Component Demos">
                 <Item
+                    title="Hearth v2"
+                    subtitle="Successor design slice — the honest phone stream"
+                    icon={<Ionicons name="flame-outline" size={28} color="#007AFF" />}
+                    onPress={() => router.push('/dev/hearth-v2' as any)}
+                />
+                <Item
                     title="Device Info"
                     subtitle="Safe area insets and device parameters"
                     icon={<Ionicons name="phone-portrait-outline" size={28} color="#007AFF" />}

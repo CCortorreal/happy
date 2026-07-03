@@ -295,6 +295,12 @@ export default function RootLayout() {
                 }}
             />
             <Stack.Screen
+                name="dev/hearth-v2"
+                options={{
+                    headerTitle: 'Hearth v2',
+                }}
+            />
+            <Stack.Screen
                 name="session/recent"
                 options={{
                     headerShown: true,
