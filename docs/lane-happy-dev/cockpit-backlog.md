@@ -11,7 +11,7 @@
 ## Ranking / sequence
 
 - **P0 — keystone + bug storm** ✅ ALL MERGED to `lane/happy-dev`: CKP-21, CKP-01, CKP-02, CKP-03, CKP-08
-- **P1 — the dead half** (feeds + the detail surface a human actually lands in): CKP-04, CKP-05, CKP-06, CKP-07, CKP-22
+- **P1 — the dead half** (feeds + the detail surface a human actually lands in): CKP-04 (UI-DONE), CKP-06 ✅, CKP-07 ✅, CKP-22 ✅ · remaining: CKP-05 (chat load — blocked on a real-click observation)
 - **P2 — readability redesign** (make it a command surface, not a dev tool): CKP-09, CKP-10, CKP-11, CKP-12, CKP-13, CKP-17
 - **P3 — steerability** (grow the hands): CKP-18, CKP-19, CKP-20
 - **P4 — polish**: CKP-14, CKP-15, CKP-16
@@ -114,31 +114,45 @@ Over 190s, only VRAM ever showed a value; DISK/CTX/BKLG oscillated `—` ↔ `re
 > **infra, out of cockpit scope**; the UI now tells that truth instead of lying "reading…".
 
 ### CKP-05 · Session chat loads backwards (top-anchored, full history, no virtualization) · `bug` · Major · OPEN
+> **Verify-blocked 2026-07-02 ~16:40.** The NOC chat lane touched this, but live over-time
+> observation could not run while Carlos was away: React Native Web session rows don't
+> navigate on synthetic DOM clicks (pointer-responder based), the row's `onClick` fiber source
+> is redacted by the MCP bridge, and a real click via computer-use needs Carlos's approval.
+> Next: Carlos clicks into a 1000+ message session (or approves computer-use) → then instrument
+> `scrollTop` / `scrollHeight` / node-growth over ≥3 cycles to confirm it bottom-anchors and
+> stabilizes. Not fake-greened.
 Instrumented: on load `scrollTop` stays **0**; nodes grow **155 → 1054** and height **27k → 140k px** in 43s, still growing, never bottom-anchors. A chat should open at the newest message and page older history upward.
 - **Fix:** bottom-anchor on newest; lazy-page older upward; virtualize so load doesn't scale with session length.
 - **Accept:** on load the chat rests at the newest message; scrollHeight stabilizes < 3s; no unbounded top-down growth — observed over time on a 1000+ message session.
 
-### CKP-06 · `/sessions/index` is a dead route (cutover escape hatch 404s) · `bug` · Major · OPEN
+### CKP-06 · `/sessions/index` is a dead route (cutover escape hatch 404s) · `bug` · Major · DONE
+> **DONE 2026-07-02 ~16:40 — verified live (Claude-in-Chrome, `lane/happy-dev` @ `99ec06f`).**
+> Resolved by the CKP-23 relocation (removed the `as never` bridge; `SessionsLink` now
+> `router.push('/sessions')` to a clean typed route). Clicked the "Classic session list"
+> button on the live landing surface → URL navigated to `/sessions`, **`unmatchedRoute:false`**
+> (no "Unmatched Route / page could not be found"), and the **classic list actually rendered**:
+> real session rows (Hearthside, `worker · congress-overseer`, `desk · copilot-seat`,
+> `cage-root · penthouse · idle`), a "Show archived" affordance, and the Settings/Sessions
+> footer nav. Route resolves + list renders — acceptance met.
 Navigating to `/sessions/index` → "Unmatched Route, page could not be found." This is the route the hamburger's "Classic session list" links to and the daily-driver cutover (VISION check 8) promised.
 - **Fix:** register the classic-list route correctly (Expo Router file placement).
 - **Accept:** hamburger → classic list renders; `/sessions/index` resolves, not 404.
 
-### CKP-07 · "Classic session list" icon is a blank glyph → dead route · `bug` · Minor · OPEN
+### CKP-07 · "Classic session list" icon is a blank glyph → dead route · `bug` · Minor · DONE
+> **DONE 2026-07-02 ~16:40 — verified live (Claude-in-Chrome).** `SessionsLink.tsx` now
+> renders a visible **"Sessions"** text label + an Ionicons `list` glyph + a 44px touch target
+> (measured 99×44 on the live surface), and clicking it navigates to the live classic list
+> (see CKP-06 evidence). Double-broken → double-fixed: even if the icon font ever fails, the
+> visible label keeps the path discoverable (the ticket's core intent). Icon rendered as a
+> glyph char, not blank/tofu.
 Icon-only button, ionicons private-use codepoint renders as blank/tofu, and it leads to the CKP-06 dead page. Double-broken.
 - **Fix:** correct glyph + a visible label; wire to the fixed route.
 - **Accept:** button shows a real icon + label and navigates to a live list.
 
-### CKP-22 · Oracle emits 2 anonymous `seat:null` rows · `infra` · Minor · OPEN
-seats-oracle publishes 2 rows with `seat:null`; the server row-salvage drops them, so 2 live sessions are invisible and the "11" count is untrustworthy.
-> **Evidence grew 2026-07-02 ~12:40 (post-restart):** now **6** `seat:null` UNREGISTERED
-> rows, and a freshly-registered, demonstrably-alive seat (`e26c843d`, the desk) reads
-> **DEAD** with `lastTextTs:null` — false-DEAD attribution on a live seat, same family as
-> peer-channel `c8bc55e` (oracle EPERM false-DEAD). Every named seat post-restart reads
-> DEAD/REBOUND/DAEMON-LOST despite live panes. Severity looks **Major**, not Minor — the
-> whole roster is currently unattributable; CKP-03's populated-roster re-verify blocks on
-> this. (Registration note: register stamped `cuid=null` — "cuid unresolvable, daemon
-> down/churned?" — the claudeSid-keyed join may not be enough for the oracle's verify.)
-- **Fix (upstream, peer-channel):** name-or-drop the null rows at the source.
+### CKP-22 · Oracle emits 2 anonymous `seat:null` rows · `infra` · Minor · ✅ DONE (2026-07-03)
+seats-oracle published rows with `seat:null`; the server row-salvage dropped them so live sessions were invisible.
+> **Root cause (3-part):** (1) `cuid=null` seats all collided on the same `seatByCuid[null]` key — only the last survived; (2) cuid=null seats couldn't join the daemon by cuid, so they read DEAD even when alive; (3) unregistered daemon sessions emitted `seat:null` making them invisible.
+> **Fix (infra `21fa8c8`):** (1) seatByCuid only indexes non-null cuids; (2) cuid=null seats get a dedicated fallback path via claudeSid resumeMap + hostPid → DAEMON-LOST/UNVERIFIABLE/DEAD (never false-DEAD on a live pid); (3) unregistered sessions emit `seat:'unregistered-<cuid[-6:]>'` instead of `seat:null`.
 - **Accept:** roster count matches real seats; no silent-dropped rows. Related: CKP-03, CKP-13.
 
 ---
@@ -244,3 +258,4 @@ stays put; only the module dir moves.
 - 2026-07-02 ~12:08 — **CKP-21 DONE** (tick 1 of the /loop). infra `57f53c7` (tsx watch, both launch paths) + Carlos's elevated restart. Verified over time: 2 probe edits live ≤~5s (pid lineage 45904→46460→48452), 4-cycle hold stable, 4 reloads zero crash-loops. Keystone landed — the board below is now live-verifiable.
 - 2026-07-02 ~12:55 — **CKP-01 DONE** (tick 2, Carlos-blessed). Relay speaks the client contract; 0 parse errors across 231s + two later 5-min windows. First fix to ride CKP-21's hot-reload (zero elevated hands). Process slip owned: commits landed on the lane via a wrong-repo branch; memory `git-ops-need-explicit-cd` banked.
 - 2026-07-02 ~12:55 — **CKP-02 verdict (Carlos): GO BIG** — option (b), a dedicated floors section rendering the building's boards. In flight.
+- 2026-07-02 ~16:40 — **Post-CKP-23 verification-closure sweep** (Claude-in-Chrome, live `lane/happy-dev` @ `99ec06f`, Carlos away → surface free). **CKP-06 + CKP-07 → DONE** (Sessions link resolves to a rendered classic list, no Unmatched Route; visible label + icon + 44px target). **Re-confirmed over 22s:** CKP-08 (0 errors / 0 warns / 0 toasts — the phantom-route pollution CKP-23 killed stayed dead) + CKP-04 (VRAM/BACKLOG live, disk/heartbeat honestly "can't read"). **Honest blockers, NOT flipped:** the congress **roster feed is DEAD** right now ("can't reach the congress") → **CKP-03 (populated live-count), CKP-10, CKP-11, CKP-12, CKP-13** can't be observed with no live seats rendering (need a live populated roster, CKP-22 infra); **CKP-05** blocked on a real-click into a long session (Carlos's hands / computer-use approval).
