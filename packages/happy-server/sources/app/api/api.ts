@@ -10,6 +10,7 @@ import { wardenRoutes } from "./routes/wardenRoutes";
 import { vramRoutes } from "./routes/vramRoutes";
 import { diskRoutes } from "./routes/diskRoutes";
 import { heartbeatRoutes } from "./routes/heartbeatRoutes";
+import { opsRoutes } from "./routes/opsRoutes";
 import { backlogRoutes } from "./routes/backlogRoutes";
 import { pushRoutes } from "./routes/pushRoutes";
 import { sessionRoutes } from "./routes/sessionRoutes";
@@ -125,6 +126,7 @@ export async function startApi(opts: StartApiOptions = {}) {
     vramRoutes(typed);
     diskRoutes(typed);
     heartbeatRoutes(typed);
+    opsRoutes(typed);
     backlogRoutes(typed);
 
     // Static webapp (self-host mode)
