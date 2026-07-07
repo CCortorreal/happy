@@ -6,3 +6,23 @@ packages:
   - "packages/happy-wire"
   - "packages/happy-app-logs"
   - "packages/codium"
+
+# pnpm 10 no longer reads the "pnpm" field in package.json — these settings
+# migrated here from the root package.json (see https://pnpm.io/settings).
+overrides:
+  whatwg-url: 14.2.0
+  parse-path: 7.0.3
+  "@types/parse-path": 7.0.3
+
+onlyBuiltDependencies:
+  - "@more-tech/react-native-libsodium"
+  - "@prisma/client"
+  - "@prisma/engines"
+  - "@shopify/react-native-skia"
+  - "@tailwindcss/oxide"
+  - better-sqlite3
+  - electron
+  - esbuild
+  - node-pty
+  - prisma
+  - sharp
