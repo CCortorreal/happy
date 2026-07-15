@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { homedir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadConfig } from './config';
 
@@ -40,24 +40,27 @@ describe('config', () => {
         });
 
         it('overrides home directory with HAPPY_HOME_DIR', () => {
-            process.env.HAPPY_HOME_DIR = '/tmp/custom-happy';
+            const customHomeDir = join(tmpdir(), 'custom-happy');
+            process.env.HAPPY_HOME_DIR = customHomeDir;
             const config = loadConfig();
-            expect(config.homeDir).toBe('/tmp/custom-happy');
+            expect(config.homeDir).toBe(customHomeDir);
         });
 
         it('derives credential path from overridden home directory', () => {
-            process.env.HAPPY_HOME_DIR = '/tmp/custom-happy';
+            const customHomeDir = join(tmpdir(), 'custom-happy');
+            process.env.HAPPY_HOME_DIR = customHomeDir;
             const config = loadConfig();
-            expect(config.credentialPath).toBe('/tmp/custom-happy/agent.key');
+            expect(config.credentialPath).toBe(join(customHomeDir, 'agent.key'));
         });
 
         it('allows both overrides simultaneously', () => {
             process.env.HAPPY_SERVER_URL = 'https://other.example.com';
-            process.env.HAPPY_HOME_DIR = '/opt/happy';
+            const customHomeDir = join(tmpdir(), 'opt', 'happy');
+            process.env.HAPPY_HOME_DIR = customHomeDir;
             const config = loadConfig();
             expect(config.serverUrl).toBe('https://other.example.com');
-            expect(config.homeDir).toBe('/opt/happy');
-            expect(config.credentialPath).toBe('/opt/happy/agent.key');
+            expect(config.homeDir).toBe(customHomeDir);
+            expect(config.credentialPath).toBe(join(customHomeDir, 'agent.key'));
         });
     });
 });

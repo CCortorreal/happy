@@ -11,9 +11,13 @@ const {
     resetState,
     seedSession
 } = vi.hoisted(() => {
+    const { join, normalize, relative, sep } = require("node:path") as typeof import("node:path");
+    const { tmpdir } = require("node:os") as typeof import("node:os");
+
     const state = {
         sessions: [] as Array<{ id: string; accountId: string }>,
         uploads: new Map<string, Buffer>(),
+        localFilesDir: join(tmpdir(), "test-files"),
         useLocalStorage: true,
         s3PostUrl: "https://s3.test/post-url",
         s3GetUrl: "https://s3.test/get-url",
@@ -67,20 +71,20 @@ const {
         },
         s3bucket: "test-bucket",
         isLocalStorage: vi.fn(() => state.useLocalStorage),
-        getLocalFilesDir: vi.fn(() => "/tmp/test-files"),
+        getLocalFilesDir: vi.fn(() => state.localFilesDir),
         putLocalFile: vi.fn(async (filePath: string, data: Buffer) => {
             state.uploads.set(filePath, data);
         }),
     };
 
+    const localStorageKey = (p: string) => normalize(relative(state.localFilesDir, p)).split(sep).join("/");
+
     const fsMock = {
         existsSync: vi.fn((p: string) => {
-            const rel = p.replace(/^\/tmp\/test-files\//, "");
-            return state.uploads.has(rel);
+            return state.uploads.has(localStorageKey(p));
         }),
         readFileSync: vi.fn((p: string) => {
-            const rel = p.replace(/^\/tmp\/test-files\//, "");
-            return state.uploads.get(rel) ?? Buffer.alloc(0);
+            return state.uploads.get(localStorageKey(p)) ?? Buffer.alloc(0);
         }),
     };
 

@@ -4,12 +4,18 @@ import { join, sep } from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+const { mockHappyHomeDir } = vi.hoisted(() => {
+    const { join } = require('node:path') as typeof import('node:path');
+    const { tmpdir } = require('node:os') as typeof import('node:os');
+    return { mockHappyHomeDir: join(tmpdir(), 'home', 'test', '.happy') };
+});
+
 vi.mock('@/ui/logger', () => ({
     logger: { debug: vi.fn() },
 }));
 
 vi.mock('@/configuration', () => ({
-    configuration: { happyHomeDir: '/home/test/.happy' },
+    configuration: { happyHomeDir: mockHappyHomeDir },
 }));
 
 import { logger } from '@/ui/logger';
@@ -157,20 +163,22 @@ describe('prepareCodexImageInputItems', () => {
 
 describe('resolveCodexImageCacheDir', () => {
     it('uses the explicit cache root when provided', () => {
+        const cacheRootDir = join(tmpdir(), 'happy-cache');
+
         expect(resolveCodexImageCacheDir({
-            cacheRootDir: '/tmp/happy-cache',
+            cacheRootDir,
             sessionId: 'session-1',
-        })).toBe('/tmp/happy-cache/session-1');
+        })).toBe(join(cacheRootDir, 'session-1'));
     });
 
     it('defaults to Happy local state instead of arbitrary OS temp', () => {
         expect(resolveCodexImageCacheDir({
             sessionId: 'session-4',
-        })).toBe('/home/test/.happy/codex-image-cache/session-4');
+        })).toBe(join(mockHappyHomeDir, 'codex-image-cache', 'session-4'));
     });
 
     it('keeps malformed session ids inside the cache root', () => {
-        const cacheRootDir = '/tmp/happy-cache';
+        const cacheRootDir = join(tmpdir(), 'happy-cache');
 
         const resolved = resolveCodexImageCacheDir({
             cacheRootDir,
